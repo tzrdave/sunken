@@ -728,6 +728,12 @@ const Icons = {
   Save: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
   Undo: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>,
   Discord: () => <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>,
+  Book: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
+  ExternalLink: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>,
+  ChartBar: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>,
+  User: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  Link: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
+  Video: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>,
 };
 
 // ============================================================================
@@ -753,12 +759,20 @@ const Modal = ({ title, onClose, children }) => (
 const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
+  const [showChart, setShowChart] = useState(true);
 
   const filtered = useMemo(() => {
     return [...raiders]
       .filter(r => r.name.toLowerCase().includes(search.toLowerCase()) && (classFilter === 'all' || r.class === classFilter))
       .sort((a, b) => b.dkp - a.dkp);
   }, [raiders, search, classFilter]);
+
+  // Get top 15 raiders for chart
+  const chartData = useMemo(() => {
+    return [...raiders].sort((a, b) => b.dkp - a.dkp).slice(0, 15);
+  }, [raiders]);
+  
+  const maxDkp = Math.max(...chartData.map(r => r.dkp), 1);
 
   return (
     <div className="space-y-6">
@@ -775,8 +789,40 @@ const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) =>
             <option value="all">All Classes</option>
             {WOW_CLASSES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
+          <button 
+            onClick={() => setShowChart(!showChart)}
+            className={`px-4 py-2 text-sm rounded-lg border transition-colors ${showChart ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600'}`}
+          >
+            <Icons.ChartBar />
+          </button>
         </div>
       </div>
+
+      {/* DKP Bar Chart */}
+      {showChart && chartData.length > 0 && (
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+          <h3 className="text-sm font-semibold text-slate-400 uppercase mb-4">Top {chartData.length} DKP</h3>
+          <div className="space-y-2">
+            {chartData.map((r, i) => (
+              <div key={r.id} className="flex items-center gap-3">
+                <span className="w-6 text-xs text-slate-500 text-right">{i + 1}</span>
+                <span className="w-24 text-sm font-medium truncate" style={{ color: getClassColor(r.class) }}>{r.name}</span>
+                <div className="flex-1 h-6 bg-slate-900/50 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{ 
+                      width: `${(r.dkp / maxDkp) * 100}%`,
+                      backgroundColor: getClassColor(r.class),
+                      opacity: 0.8
+                    }}
+                  />
+                </div>
+                <span className="w-16 text-right text-sm font-bold text-amber-400">{r.dkp}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -1308,6 +1354,9 @@ const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid }) 
                         {raid.editHistory && raid.editHistory.length > 0 && (
                           <span className="ml-2 px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded-full">Edited</span>
                         )}
+                        {raid.warcraftLogsUrl && (
+                          <span className="ml-2 px-2 py-0.5 text-xs bg-orange-500/20 text-orange-400 rounded-full">Logs</span>
+                        )}
                       </h3>
                       <p className="text-slate-400 text-sm">{fmtDateTime(raid.completedAt)}</p>
                     </div>
@@ -1323,6 +1372,21 @@ const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid }) 
 
                 {isExp && (
                   <div className="border-t border-slate-700/50 p-6 space-y-6">
+                    {/* Warcraft Logs Link */}
+                    {raid.warcraftLogsUrl && (
+                      <div className="flex items-center gap-3">
+                        <a 
+                          href={raid.warcraftLogsUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-lg border border-orange-500/30 transition-colors"
+                        >
+                          <Icons.ExternalLink /> View Warcraft Logs
+                        </a>
+                      </div>
+                    )}
+                    
                     {/* Admin Edit Controls */}
                     {isAdmin && !isEditing && (
                       <div className="flex items-center justify-between">
@@ -1767,6 +1831,135 @@ const LootTab = ({ lootHistory, raiders, isAdmin, onRecord }) => {
 };
 
 // ============================================================================
+// RESOURCES TAB
+// ============================================================================
+
+const CLASS_DISCORDS = [
+  { name: 'Druid', url: 'https://discord.gg/SMwmrBV', color: '#FF7D0A' },
+  { name: 'Hunter', url: 'https://discord.gg/8TVHxRr', color: '#ABD473' },
+  { name: 'Mage', url: 'https://discord.gg/tEdQhsH', color: '#69CCF0' },
+  { name: 'Paladin', url: 'https://discord.gg/Bqherze', color: '#F58CBA' },
+  { name: 'Priest', url: 'https://discord.gg/priestclassic', color: '#FFFFFF' },
+  { name: 'Rogue', url: 'https://discord.com/invite/mkfKCBB', color: '#FFF569' },
+  { name: 'Shaman', url: 'https://discord.com/invite/PqHWvXe', color: '#0070DE' },
+  { name: 'Warlock', url: 'https://discord.gg/D6TrRkq', color: '#9482C9' },
+  { name: 'Warrior', url: 'https://discord.gg/RbCZJtw', color: '#C79C6E' },
+];
+
+const DATABASE_WEBSITES = [
+  { name: 'Sixty Upgrades', desc: 'Keep track of your gear sets and plan your progression through all levels and content phases in World of Warcraft Classic TBC.', url: 'https://sixtyupgrades.com/tbc' },
+  { name: 'Raider.io', desc: 'Raider.IO is a World of Warcraft (WoW) Stats and Rankings site! View details about your Characters, Guilds, Realms, and much more.', url: 'https://era.raider.io/' },
+  { name: 'Warcraft Logs', desc: 'Combat Data for your characters raid performance parsed against players of the same class and spec over a period of time.', url: 'https://fresh.warcraftlogs.com/' },
+  { name: 'Ironforge.pro', desc: 'Realm Populations on Anniversary.', url: 'https://ironforge.pro/population/anniversary/' },
+  { name: 'Wowhead', desc: 'Database for everything in The Burning Crusade.', url: 'https://www.wowhead.com/tbc' },
+  { name: 'Curseforge', desc: 'Database for most of the popular Addons.', url: 'https://www.curseforge.com/' },
+];
+
+const RAID_GUIDES = [
+  { name: 'Overview of all Raids', wowhead: 'https://www.wowhead.com/tbc/guide/raids-overview-burning-crusade-classic' },
+  { name: 'Karazhan', wowhead: 'https://www.wowhead.com/tbc/guide/karazhan-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=oAO5wdSJHlc' },
+  { name: "Gruul's Lair", wowhead: 'https://www.wowhead.com/tbc/guide/gruuls-lair-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=MZo5F5irsPk' },
+  { name: "Magtheridon's Lair", wowhead: 'https://www.wowhead.com/tbc/guide/magtheridons-lair-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=NBP7T9QMad0' },
+  { name: 'Serpentshrine Cavern (SSC)', wowhead: 'https://www.wowhead.com/tbc/guide/serpentshrine-cavern-ssc-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=4M3Y2w8-pdw' },
+  { name: 'Black Temple', wowhead: 'https://www.wowhead.com/tbc/guide/black-temple-bt-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=cvMTW85NQJU' },
+  { name: 'Tempest Keep', wowhead: 'https://www.wowhead.com/tbc/guide/the-eye-tempest-keep-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=zlw07EjaT5E' },
+  { name: 'Sunwell Plateau', wowhead: 'https://www.wowhead.com/tbc/guide/sunwell-plateau-raid-overview-burning-crusade-classic', youtube: 'https://www.youtube.com/watch?v=2Q1grtpjB7I' },
+];
+
+const ResourcesTab = () => {
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-2xl font-bold text-amber-400">Resources</h2>
+        <p className="text-slate-400 text-sm mt-1">Helpful links for TBC Classic raiders</p>
+      </div>
+
+      {/* Class Discords */}
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-amber-400 mb-4 flex items-center gap-2">
+          <Icons.Discord /> Class Discords
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {CLASS_DISCORDS.map(cls => (
+            <a
+              key={cls.name}
+              href={cls.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 p-3 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-700/30 hover:border-slate-600 rounded-lg transition-all group"
+            >
+              <span className="font-medium" style={{ color: cls.color }}>{cls.name}</span>
+              <Icons.ExternalLink />
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {/* Database Websites */}
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-amber-400 mb-4 flex items-center gap-2">
+          <Icons.Link /> Database Websites
+        </h3>
+        <div className="grid md:grid-cols-2 gap-4">
+          {DATABASE_WEBSITES.map(site => (
+            <a
+              key={site.name}
+              href={site.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-4 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-700/30 hover:border-amber-500/30 rounded-lg transition-all group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-slate-100 group-hover:text-amber-400 transition-colors">{site.name}</span>
+                <Icons.ExternalLink />
+              </div>
+              <p className="text-sm text-slate-400">{site.desc}</p>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {/* Raid Guides */}
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-amber-400 mb-4 flex items-center gap-2">
+          <Icons.Book /> Raid Guides
+        </h3>
+        <div className="space-y-3">
+          {RAID_GUIDES.map(guide => (
+            <div
+              key={guide.name}
+              className="flex items-center justify-between p-3 bg-slate-900/50 border border-slate-700/30 rounded-lg"
+            >
+              <span className="font-medium text-slate-100">{guide.name}</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={guide.wowhead}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 text-sm rounded-lg transition-colors"
+                >
+                  <Icons.Link /> Wowhead
+                </a>
+                {guide.youtube && (
+                  <a
+                    href={guide.youtube}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm rounded-lg transition-colors"
+                  >
+                    <Icons.Video /> Video
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // ADMIN TAB
 // ============================================================================
 
@@ -1783,7 +1976,7 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
   const [editRank, setEditRank] = useState('');
 
   // Run Raid State - now from props (persists across tab switches)
-  const { selectedRaid, selectedRaiders, bossesKilled, progBosses, raiderBonuses, lootItems, dkpAwarded } = runRaidState;
+  const { selectedRaid, selectedRaiders, bossesKilled, progBosses, raiderBonuses, lootItems, dkpAwarded, warcraftLogsUrl } = runRaidState;
   
   // Local setters that update the parent state
   const setSelectedRaid = (val) => updateRunRaidState({ selectedRaid: val });
@@ -1793,6 +1986,7 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
   const setRaiderBonuses = (val) => updateRunRaidState({ raiderBonuses: typeof val === 'function' ? val(raiderBonuses) : val });
   const setLootItems = (val) => updateRunRaidState({ lootItems: typeof val === 'function' ? val(lootItems) : val });
   const setDkpAwarded = (val) => updateRunRaidState({ dkpAwarded: val });
+  const setWarcraftLogsUrl = (val) => updateRunRaidState({ warcraftLogsUrl: val });
   
   // Local modal state (doesn't need to persist)
   const [showLootModal, setShowLootModal] = useState(false);
@@ -1955,8 +2149,8 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
     const raidId = genId();
     const participants = selectedRaiders.map(id => ({ raiderId: id, dkpEarned: dkpAwarded ? calcDKP(id) : 0, bonuses: raiderBonuses[id] || {} }));
     
-    // Complete the raid with pre-generated ID
-    onComplete({ raidType: selectedRaid, participants, bossesKilled, progBosses, dkpAwarded }, raidId);
+    // Complete the raid with pre-generated ID, including logs URL
+    onComplete({ raidType: selectedRaid, participants, bossesKilled, progBosses, dkpAwarded, warcraftLogsUrl }, raidId);
     
     // Record loot with the same raid ID
     lootItems.forEach(item => onRecordLoot({ ...item, raidId }));
@@ -2110,9 +2304,21 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
         <div className="space-y-6">
           <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
             <h3 className="text-lg font-semibold text-amber-400 mb-4">Select Raid</h3>
-            <select value={selectedRaid} onChange={e => { setSelectedRaid(e.target.value); setBossesKilled([]); setProgBosses([]); }} className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
+            <select value={selectedRaid} onChange={e => { setSelectedRaid(e.target.value); setBossesKilled([]); setProgBosses([]); }} className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50 mb-4">
               {Object.entries(TBC_RAIDS).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
             </select>
+            
+            {/* Warcraft Logs URL */}
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Warcraft Logs URL (optional)</label>
+              <input 
+                type="url" 
+                value={warcraftLogsUrl} 
+                onChange={e => setWarcraftLogsUrl(e.target.value)} 
+                placeholder="https://fresh.warcraftlogs.com/reports/..." 
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+              />
+            </div>
           </div>
 
           <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
@@ -2421,6 +2627,7 @@ const [runRaidState, setRunRaidState] = useState({
   raiderBonuses: {},
   lootItems: [],
   dkpAwarded: false,
+  warcraftLogsUrl: '',
 });
 
 const updateRunRaidState = (updates) => {
@@ -2436,6 +2643,7 @@ const resetRunRaidState = () => {
     raiderBonuses: {},
     lootItems: [],
     dkpAwarded: false,
+    warcraftLogsUrl: '',
   });
 };
 
@@ -2819,6 +3027,7 @@ const resetRunRaidState = () => {
     { id: 'raids', label: 'Raid Schedule', icon: <Icons.Calendar /> },
     { id: 'history', label: 'Raid History', icon: <Icons.History /> },
     { id: 'loot', label: 'Loot Log', icon: <Icons.Sword /> },
+    { id: 'resources', label: 'Resources', icon: <Icons.Book /> },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: <Icons.Settings /> }] : []),
     { id: 'discord', label: 'Discord', icon: <Icons.Discord />, external: 'https://discord.gg/shAvc9ZVpA' }
   ];
@@ -2849,7 +3058,7 @@ const resetRunRaidState = () => {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
               <div className="text-amber-500"><Icons.Anchor /></div>
-              <div><h1 className="text-xl font-bold tracking-tight"><span className="text-amber-500">SUNKEN</span><span className="text-slate-400 font-normal ml-2">DKP System</span></h1></div>
+              <div><h1 className="text-xl font-bold tracking-tight"><span className="text-amber-500">SUNKEN</span><span className="text-slate-400 font-normal ml-2">TBC - Phase 1</span></h1></div>
             </div>
             {nextRaid && (
               <div className="hidden md:flex items-center gap-2 px-4 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-full">
@@ -2914,6 +3123,7 @@ const resetRunRaidState = () => {
         {tab === 'raids' && <RaidsTab scheduled={scheduled} raiders={raiders} isAdmin={isAdmin} onSchedule={scheduleRaid} onRemove={removeScheduled} onUpdateScheduled={updateScheduledRaid} />}
         {tab === 'history' && <HistoryTab raidHistory={raidHistory} lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onEditRaid={editRaid} />}
         {tab === 'loot' && <LootTab lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onRecord={recordLoot} />}
+        {tab === 'resources' && <ResourcesTab />}
         {tab === 'admin' && isAdmin && (
   <AdminTab
     raiders={raiders}
@@ -2941,7 +3151,7 @@ const resetRunRaidState = () => {
       <footer className="relative border-t border-slate-700/50 bg-slate-900/50 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between text-sm text-slate-500">
-            <span>Sunken Guild - TBC Classic</span>
+            <span>Sunken - Nightslayer US</span>
             <span>DKP decays 50% every 4 raids</span>
           </div>
         </div>

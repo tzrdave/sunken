@@ -177,8 +177,9 @@ export function useSupabaseState() {
       progBosses: r.prog_bosses || [],
       participants: r.participants || [],
       dkpAwarded: r.dkp_awarded,
+      warcraftLogsUrl: r.warcraft_logs_url || '',
       completedAt: r.completed_at,
-      // lootDistributed will be fetched separately or joined
+      editHistory: r.edit_history || [],
     };
   }
 
@@ -190,6 +191,7 @@ export function useSupabaseState() {
       prog_bosses: r.progBosses || [],
       participants: r.participants || [],
       dkp_awarded: r.dkpAwarded ?? false,
+      warcraft_logs_url: r.warcraftLogsUrl || null,
       completed_at: r.completedAt ?? new Date().toISOString(),
     };
   }
