@@ -7,7 +7,7 @@ import { supabase } from "./supabaseClient";
 // THE SUNKEN DKP SYSTEM - Guild Loot Tracker for WoW Classic TBC
 // ============================================================================
 
-const APP_VERSION = "1.0.4";
+const APP_VERSION = "1.0.5";
 
 // ============================================================================
 // DATA CONSTANTS
@@ -762,14 +762,287 @@ const Modal = ({ title, onClose, children }) => (
 );
 
 // ============================================================================
+// RAIDER PROFILE MODAL
+// ============================================================================
+
+const RaiderProfileModal = ({ raider, raidHistory, lootHistory, onClose, onViewRaid }) => {
+  if (!raider) return null;
+
+  // Calculate stats
+  const raiderRaids = useMemo(() => {
+    return raidHistory.filter(raid => 
+      raid.participants?.some(p => p.raiderId === raider.id)
+    ).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+  }, [raidHistory, raider.id]);
+
+  const raiderLoot = useMemo(() => {
+    return lootHistory.filter(l => l.winnerId === raider.id)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  }, [lootHistory, raider.id]);
+
+  const totalDkpEarned = useMemo(() => {
+    return raiderRaids.reduce((sum, raid) => {
+      const participant = raid.participants?.find(p => p.raiderId === raider.id);
+      return sum + (participant?.dkpEarned || 0);
+    }, 0);
+  }, [raiderRaids, raider.id]);
+
+  const totalDkpSpent = useMemo(() => {
+    return raiderLoot.reduce((sum, l) => sum + l.dkpCost, 0);
+  }, [raiderLoot]);
+
+  // Calculate average parse from raid bonuses
+  const parseStats = useMemo(() => {
+    const parseCounts = { 50: 0, 60: 0, 70: 0, 80: 0, 90: 0 };
+    let totalParses = 0;
+    
+    raiderRaids.forEach(raid => {
+      const participant = raid.participants?.find(p => p.raiderId === raider.id);
+      if (participant?.bonuses) {
+        if (participant.bonuses.parse90) { parseCounts[90]++; totalParses++; }
+        else if (participant.bonuses.parse80) { parseCounts[80]++; totalParses++; }
+        else if (participant.bonuses.parse70) { parseCounts[70]++; totalParses++; }
+        else if (participant.bonuses.parse60) { parseCounts[60]++; totalParses++; }
+        else if (participant.bonuses.parse50) { parseCounts[50]++; totalParses++; }
+      }
+    });
+    
+    // Calculate weighted average
+    let avgParse = 0;
+    if (totalParses > 0) {
+      const weightedSum = (parseCounts[50] * 50) + (parseCounts[60] * 60) + 
+                          (parseCounts[70] * 70) + (parseCounts[80] * 80) + 
+                          (parseCounts[90] * 90);
+      avgParse = Math.round(weightedSum / totalParses);
+    }
+    
+    return { parseCounts, totalParses, avgParse };
+  }, [raiderRaids, raider.id]);
+
+  // Attendance stats
+  const attendanceStats = useMemo(() => {
+    let onTimeCount = 0;
+    let fullConsumesCount = 0;
+    let benchCount = 0;
+    
+    raiderRaids.forEach(raid => {
+      const participant = raid.participants?.find(p => p.raiderId === raider.id);
+      if (participant?.bonuses) {
+        if (participant.bonuses.onTime) onTimeCount++;
+        if (participant.bonuses.consumesFull) fullConsumesCount++;
+        if (participant.bonuses.bench) benchCount++;
+      }
+    });
+    
+    return { 
+      onTimeCount, 
+      fullConsumesCount, 
+      benchCount,
+      onTimePercent: raiderRaids.length > 0 ? Math.round((onTimeCount / raiderRaids.length) * 100) : 0,
+      consumesPercent: raiderRaids.length > 0 ? Math.round((fullConsumesCount / raiderRaids.length) * 100) : 0
+    };
+  }, [raiderRaids, raider.id]);
+
+  // BiS vs non-BiS loot
+  const lootStats = useMemo(() => {
+    const bisCount = raiderLoot.filter(l => l.isBis).length;
+    const nonBisCount = raiderLoot.filter(l => !l.isBis).length;
+    return { bisCount, nonBisCount, total: raiderLoot.length };
+  }, [raiderLoot]);
+
+  const getParseColor = (avg) => {
+    if (avg >= 90) return 'text-orange-400';
+    if (avg >= 80) return 'text-purple-400';
+    if (avg >= 70) return 'text-blue-400';
+    if (avg >= 60) return 'text-green-400';
+    return 'text-slate-400';
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b border-slate-700/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
+                style={{ backgroundColor: `${getClassColor(raider.class)}20`, color: getClassColor(raider.class) }}>
+                {raider.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold" style={{ color: getClassColor(raider.class) }}>{raider.name}</h2>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-slate-400">{raider.class}</span>
+                  <span className="text-slate-600">•</span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${
+                    raider.role === 'Tank' ? 'bg-blue-500/20 text-blue-400' :
+                    raider.role === 'Healer' ? 'bg-green-500/20 text-green-400' :
+                    raider.role === 'Melee' ? 'bg-red-500/20 text-red-400' :
+                    'bg-purple-500/20 text-purple-400'
+                  }`}>{raider.role || 'N/A'}</span>
+                  <span className="text-slate-600">•</span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${
+                    raider.rank === 'Trial' ? 'bg-yellow-500/20 text-yellow-400' :
+                    raider.rank === 'Officer' ? 'bg-purple-500/20 text-purple-400' : 
+                    'bg-green-500/20 text-green-400'
+                  }`}>{raider.rank}</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-2"><Icons.X /></button>
+          </div>
+        </div>
+
+        {/* Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* DKP Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-amber-400">{raider.dkp}</div>
+              <div className="text-xs text-slate-500 mt-1">Current DKP</div>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-green-400">{totalDkpEarned}</div>
+              <div className="text-xs text-slate-500 mt-1">Total Earned</div>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-red-400">{totalDkpSpent}</div>
+              <div className="text-xs text-slate-500 mt-1">Total Spent</div>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-blue-400">{raiderRaids.length}</div>
+              <div className="text-xs text-slate-500 mt-1">Raids Attended</div>
+            </div>
+          </div>
+
+          {/* Performance Stats */}
+          <div className="bg-slate-900/50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase mb-3">Performance</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${getParseColor(parseStats.avgParse)}`}>
+                  {parseStats.avgParse > 0 ? parseStats.avgParse : 'N/A'}
+                </div>
+                <div className="text-xs text-slate-500">Avg Parse</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-slate-300">{attendanceStats.onTimePercent}%</div>
+                <div className="text-xs text-slate-500">On-Time</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-slate-300">{attendanceStats.consumesPercent}%</div>
+                <div className="text-xs text-slate-500">Full Consumes</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-400">{attendanceStats.benchCount}</div>
+                <div className="text-xs text-slate-500">Times Benched</div>
+              </div>
+            </div>
+            
+            {/* Parse Breakdown */}
+            {parseStats.totalParses > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-700/50">
+                <div className="text-xs text-slate-500 mb-2">Parse Distribution ({parseStats.totalParses} recorded)</div>
+                <div className="flex gap-2">
+                  {[90, 80, 70, 60, 50].map(tier => (
+                    <div key={tier} className="flex-1 text-center">
+                      <div className={`text-sm font-semibold ${
+                        tier === 90 ? 'text-orange-400' :
+                        tier === 80 ? 'text-purple-400' :
+                        tier === 70 ? 'text-blue-400' :
+                        tier === 60 ? 'text-green-400' : 'text-slate-400'
+                      }`}>{parseStats.parseCounts[tier]}</div>
+                      <div className="text-xs text-slate-600">{tier}+</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Loot History */}
+          <div className="bg-slate-900/50 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-400 uppercase">Loot Received ({lootStats.total})</h3>
+              <div className="flex gap-2 text-xs">
+                <span className="text-amber-400">{lootStats.bisCount} BiS</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-slate-400">{lootStats.nonBisCount} Non-BiS</span>
+              </div>
+            </div>
+            {raiderLoot.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-4">No loot received yet</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {raiderLoot.map(l => (
+                  <div key={l.id} className="flex items-center justify-between p-2 bg-slate-800/50 rounded">
+                    <div className="flex items-center gap-2">
+                      {l.wowheadId ? (
+                        <a href={`https://tbc.wowhead.com/item=${l.wowheadId}`} target="_blank" rel="noopener noreferrer" 
+                          data-wowhead={`item=${l.wowheadId}&domain=tbc`} className="text-sm font-medium hover:underline">{l.itemName}</a>
+                      ) : (
+                        <span className="text-sm font-medium text-slate-300">{l.itemName}</span>
+                      )}
+                      {l.isBis && <span className="text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded">BiS</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-red-400 text-sm font-semibold">-{l.dkpCost}</span>
+                      <span className="text-slate-500 text-xs">{new Date(l.timestamp).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Raid History */}
+          <div className="bg-slate-900/50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase mb-3">Raid History ({raiderRaids.length})</h3>
+            {raiderRaids.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-4">No raids attended yet</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {raiderRaids.slice(0, 20).map(raid => {
+                  const participant = raid.participants?.find(p => p.raiderId === raider.id);
+                  return (
+                    <button
+                      key={raid.id}
+                      onClick={() => { onClose(); onViewRaid?.(raid.id); }}
+                      className="w-full flex items-center justify-between p-2 bg-slate-800/50 hover:bg-slate-700/50 rounded text-left transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-300">{TBC_RAIDS[raid.raidType]?.name || raid.raidType}</span>
+                        {participant?.bonuses?.bench && <span className="text-xs px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">Bench</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-green-400 text-sm font-semibold">+{participant?.dkpEarned || 0}</span>
+                        <span className="text-slate-500 text-xs">{new Date(raid.completedAt).toLocaleDateString()}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+                {raiderRaids.length > 20 && (
+                  <p className="text-slate-500 text-xs text-center pt-2">...and {raiderRaids.length - 20} more raids</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // ROSTER TAB (formerly Standings)
 // ============================================================================
 
-const RosterTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
+const RosterTab = ({ raiders, raidHistory, lootHistory, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [showChart, setShowChart] = useState(true);
+  const [selectedRaider, setSelectedRaider] = useState(null);
 
   const filtered = useMemo(() => {
     return [...raiders]
@@ -873,7 +1146,9 @@ const RosterTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
                       i === 2 ? 'bg-amber-700/20 text-amber-600 border border-amber-700/30' : 'bg-slate-700/50 text-slate-400'
                     }`}>{i + 1}</span>
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-100">{r.name}</td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => setSelectedRaider(r)} className="font-semibold text-slate-100 hover:text-amber-400 transition-colors">{r.name}</button>
+                  </td>
                   <td className="px-4 py-3">
                     <span className="px-2 py-1 rounded text-sm font-medium" style={{ color: getClassColor(r.class), backgroundColor: `${getClassColor(r.class)}15` }}>{r.class}</span>
                   </td>
@@ -921,6 +1196,16 @@ const RosterTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
           ))}
         </div>
       </div>
+
+      {/* Raider Profile Modal */}
+      {selectedRaider && (
+        <RaiderProfileModal 
+          raider={selectedRaider} 
+          raidHistory={raidHistory} 
+          lootHistory={lootHistory} 
+          onClose={() => setSelectedRaider(null)} 
+        />
+      )}
     </div>
   );
 };
@@ -1477,6 +1762,7 @@ Icons.Edit = () => (
 // ============================================================================
 
 const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid, onDeleteRaid }) => {
+  const [selectedRaider, setSelectedRaider] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [editingRaid, setEditingRaid] = useState(null);
   const [showChangelog, setShowChangelog] = useState(null);
@@ -1772,7 +2058,7 @@ const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid, on
                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                             {raid.participants.map(p => (
                               <div key={p.raiderId} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                                <span className="text-slate-300 text-sm">{getName(p.raiderId)}</span>
+                                <button onClick={() => setSelectedRaider(raiders.find(r => r.id === p.raiderId))} className="text-slate-300 text-sm hover:text-amber-400 transition-colors">{getName(p.raiderId)}</button>
                                 <span className="text-amber-400 font-semibold">+{p.dkpEarned}</span>
                               </div>
                             ))}
@@ -1814,7 +2100,7 @@ const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid, on
                                     ) : (
                                       <span className="text-slate-100 font-medium">{l.itemName}</span>
                                     )}
-                                    <span className="text-slate-500 text-sm ml-2">→ {getName(l.winnerId)}</span>
+                                    <button onClick={() => setSelectedRaider(raiders.find(r => r.id === l.winnerId))} className="text-slate-500 text-sm ml-2 hover:text-amber-400 transition-colors">→ {getName(l.winnerId)}</button>
                                     <span className="text-slate-600 text-xs ml-2">({l.isBis ? 'BiS' : 'OS'})</span>
                                   </div>
                                   <span className="text-red-400 font-semibold">-{l.dkpCost} DKP</span>
@@ -1831,6 +2117,16 @@ const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid, on
             );
           })}
         </div>
+      )}
+
+      {/* Raider Profile Modal */}
+      {selectedRaider && (
+        <RaiderProfileModal 
+          raider={selectedRaider} 
+          raidHistory={raidHistory} 
+          lootHistory={lootHistory} 
+          onClose={() => setSelectedRaider(null)} 
+        />
       )}
     </div>
   );
@@ -1851,7 +2147,8 @@ Icons.Edit = () => (
 // LOOT TAB
 // ============================================================================
 
-const LootTab = ({ lootHistory, raiders, isAdmin, onRecord, onDelete }) => {
+const LootTab = ({ lootHistory, raidHistory, raiders, isAdmin, onRecord, onDelete }) => {
+  const [selectedRaider, setSelectedRaider] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [filter, setFilter] = useState('all');
   
@@ -1882,8 +2179,8 @@ const LootTab = ({ lootHistory, raiders, isAdmin, onRecord, onDelete }) => {
   const getClass = (id) => raiders.find(r => r.id === id)?.class || null;
   const filteredLoot = useMemo(() => filter === 'all' ? lootHistory : lootHistory.filter(l => l.winnerId === filter), [lootHistory, filter]);
 
-  const selectedRaider = raiders.find(r => r.id === winnerId);
-  const cost = selectedRaider ? calcCost(selectedRaider.dkp, category, isBis) : 0;
+  const selectedWinner = raiders.find(r => r.id === winnerId);
+  const cost = selectedWinner ? calcCost(selectedWinner.dkp, category, isBis) : 0;
 
   const raidLoot = useMemo(() => {
     if (!selectedRaidType || !RAID_LOOT[selectedRaidType]) return [];
@@ -1973,7 +2270,9 @@ const LootTab = ({ lootHistory, raiders, isAdmin, onRecord, onDelete }) => {
                         <span className="font-semibold text-slate-100">{l.itemName}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3"><span className="font-medium" style={{ color: getClassColor(getClass(l.winnerId)) }}>{getName(l.winnerId)}</span></td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => setSelectedRaider(raiders.find(r => r.id === l.winnerId))} className="font-medium hover:underline" style={{ color: getClassColor(getClass(l.winnerId)) }}>{getName(l.winnerId)}</button>
+                    </td>
                     <td className="px-4 py-3 text-slate-400 text-sm">{ITEM_CATS[l.category]?.label || l.category}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-medium ${l.isBis ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-600/50 text-slate-400'}`}>{l.isBis ? 'BiS' : 'Non-BiS'}</span></td>
                     <td className="px-4 py-3 text-right text-red-400 font-semibold">-{l.dkpCost}</td>
@@ -1991,6 +2290,16 @@ const LootTab = ({ lootHistory, raiders, isAdmin, onRecord, onDelete }) => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Raider Profile Modal */}
+      {selectedRaider && (
+        <RaiderProfileModal 
+          raider={selectedRaider} 
+          raidHistory={raidHistory} 
+          lootHistory={lootHistory} 
+          onClose={() => setSelectedRaider(null)} 
+        />
       )}
 
       {showModal && (
@@ -3691,10 +4000,10 @@ const resetRunRaidState = () => {
       </nav>
 
       <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {tab === 'roster' && <RosterTab raiders={raiders} isAdmin={isAdmin} onUpdateDKP={updateDKP} onRemove={removeRaider} onPromote={promoteRaider} />}
+        {tab === 'roster' && <RosterTab raiders={raiders} raidHistory={raidHistory} lootHistory={lootHistory} isAdmin={isAdmin} onUpdateDKP={updateDKP} onRemove={removeRaider} onPromote={promoteRaider} />}
         {tab === 'raids' && <RaidsTab scheduled={scheduled} raiders={raiders} isAdmin={isAdmin} onSchedule={scheduleRaid} onRemove={removeScheduled} onUpdateScheduled={updateScheduledRaid} />}
         {tab === 'history' && <HistoryTab raidHistory={raidHistory} lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onEditRaid={editRaid} onDeleteRaid={deleteRaidFromHistory} />}
-        {tab === 'loot' && <LootTab lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onRecord={recordLoot} onDelete={deleteLootEntry} />}
+        {tab === 'loot' && <LootTab lootHistory={lootHistory} raidHistory={raidHistory} raiders={raiders} isAdmin={isAdmin} onRecord={recordLoot} onDelete={deleteLootEntry} />}
         {tab === 'resources' && <ResourcesTab />}
         {tab === 'admin' && isAdmin && (
   <AdminTab
