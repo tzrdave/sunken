@@ -3,13 +3,14 @@ import { supabase } from "./supabaseClient";
 
 /**
  * Custom hook for managing DKP state with normalized Supabase tables
- * Tables: raiders, raid_history, loot_history, scheduled_raids
+ * Tables: raiders, raid_history, loot_history, scheduled_raids, activity_log
  */
 export function useSupabaseState() {
   const [raiders, setRaiders] = useState([]);
   const [raidHistory, setRaidHistory] = useState([]);
   const [lootHistory, setLootHistory] = useState([]);
   const [scheduled, setScheduled] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -28,11 +29,12 @@ export function useSupabaseState() {
 
       try {
         // Load all tables in parallel
-        const [raidersRes, raidHistoryRes, lootHistoryRes, scheduledRes] = await Promise.all([
+        const [raidersRes, raidHistoryRes, lootHistoryRes, scheduledRes, activityRes] = await Promise.all([
           supabase.from("raiders").select("*").order("dkp", { ascending: false }),
           supabase.from("raid_history").select("*").order("completed_at", { ascending: false }),
           supabase.from("loot_history").select("*").order("timestamp", { ascending: false }),
           supabase.from("scheduled_raids").select("*").order("date_time", { ascending: true }),
+          supabase.from("activity_log").select("*").order("timestamp", { ascending: false }).limit(500),
         ]);
 
         if (!active) return;
@@ -42,12 +44,15 @@ export function useSupabaseState() {
         if (raidHistoryRes.error) throw raidHistoryRes.error;
         if (lootHistoryRes.error) throw lootHistoryRes.error;
         if (scheduledRes.error) throw scheduledRes.error;
+        // Activity log error is non-fatal (table might not exist yet)
+        if (activityRes.error) console.warn("Activity log not available:", activityRes.error.message);
 
         // Transform data from snake_case to camelCase for app compatibility
         setRaiders((raidersRes.data || []).map(transformRaiderFromDb));
         setRaidHistory((raidHistoryRes.data || []).map(transformRaidFromDb));
         setLootHistory((lootHistoryRes.data || []).map(transformLootFromDb));
         setScheduled((scheduledRes.data || []).map(transformScheduledFromDb));
+        setActivityLog((activityRes.data || []).map(transformActivityFromDb));
         
         setLoading(false);
       } catch (err) {
@@ -249,6 +254,50 @@ export function useSupabaseState() {
       created_at: s.createdAt ?? new Date().toISOString(),
     };
   }
+
+  function transformActivityFromDb(a) {
+    return {
+      id: a.id,
+      actionType: a.action_type,
+      description: a.description,
+      details: a.details || {},
+      timestamp: a.timestamp,
+    };
+  }
+
+  function transformActivityToDb(a) {
+    return {
+      id: a.id,
+      action_type: a.actionType,
+      description: a.description,
+      details: a.details || {},
+      timestamp: a.timestamp ?? new Date().toISOString(),
+    };
+  }
+
+  // ============================================================================
+  // ACTIVITY LOG OPERATIONS
+  // ============================================================================
+
+  const addActivity = useCallback(async (actionType, description, details = {}) => {
+    const activity = {
+      id: `act_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      actionType,
+      description,
+      details,
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Optimistic update - add to front
+    setActivityLog(prev => [activity, ...prev].slice(0, 500));
+    
+    // Save to DB (fire and forget - don't block on activity log)
+    supabase.from("activity_log").insert(transformActivityToDb(activity)).then(({ error }) => {
+      if (error) console.warn("Failed to save activity:", error.message);
+    });
+    
+    return activity;
+  }, []);
 
   // ============================================================================
   // RAIDERS OPERATIONS
@@ -530,5 +579,9 @@ export function useSupabaseState() {
     addScheduledRaid,
     updateScheduledRaid,
     deleteScheduledRaid,
+    
+    // Activity log
+    activityLog,
+    addActivity,
   };
 }

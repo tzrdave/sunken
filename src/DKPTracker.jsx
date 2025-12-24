@@ -7,7 +7,7 @@ import { supabase } from "./supabaseClient";
 // THE SUNKEN DKP SYSTEM - Guild Loot Tracker for WoW Classic TBC
 // ============================================================================
 
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.0.4";
 
 // ============================================================================
 // DATA CONSTANTS
@@ -2246,7 +2246,7 @@ const ResourcesTab = () => {
 // ADMIN TAB
 // ============================================================================
 
-const AdminTab = ({ raiders, raidHistory, scheduled, onAdd, onEdit, onRemove, onUpdateDKP, onBulkUpdateDKP, onSetDKP, onDecay, onComplete, onRecordLoot, canUndo, lastAction, onUndo, runRaidState, updateRunRaidState, resetRunRaidState }) => {
+const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit, onRemove, onUpdateDKP, onBulkUpdateDKP, onSetDKP, onDecay, onComplete, onRecordLoot, canUndo, lastAction, onUndo, runRaidState, updateRunRaidState, resetRunRaidState }) => {
   const [subTab, setSubTab] = useState('raiders');
   const [newName, setNewName] = useState('');
   const [newClass, setNewClass] = useState('Warrior');
@@ -2505,9 +2505,9 @@ const AdminTab = ({ raiders, raidHistory, scheduled, onAdd, onEdit, onRemove, on
         )}
       </div>
 
-      <div className="flex gap-2 border-b border-slate-700/50 pb-2">
-        {[{ id: 'raiders', label: 'Manage Raiders' }, { id: 'runraid', label: 'Run Raid' }, { id: 'dkp', label: 'DKP Adjustments' }].map(t => (
-          <button key={t.id} onClick={() => setSubTab(t.id)} className={`px-4 py-2 text-sm font-medium rounded-lg ${subTab === t.id ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}>{t.label}</button>
+      <div className="flex gap-2 border-b border-slate-700/50 pb-2 overflow-x-auto">
+        {[{ id: 'raiders', label: 'Manage Raiders' }, { id: 'runraid', label: 'Run Raid' }, { id: 'dkp', label: 'DKP Adjustments' }, { id: 'activity', label: 'Activity Log' }].map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id)} className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap ${subTab === t.id ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -2954,6 +2954,85 @@ const AdminTab = ({ raiders, raidHistory, scheduled, onAdd, onEdit, onRemove, on
           </div>
         </div>
       )}
+
+      {/* ACTIVITY LOG */}
+      {subTab === 'activity' && (
+        <div className="space-y-6">
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-amber-400">Activity Log</h3>
+              <span className="text-sm text-slate-500">{activityLog.length} entries (max 500)</span>
+            </div>
+            
+            {activityLog.length === 0 ? (
+              <p className="text-slate-500 text-center py-8">No activity recorded yet</p>
+            ) : (
+              <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                {activityLog.map(activity => {
+                  const getActionColor = (type) => {
+                    if (type.includes('ADDED') || type.includes('COMPLETED') || type.includes('SCHEDULED')) return 'text-green-400 bg-green-500/10 border-green-500/30';
+                    if (type.includes('DELETED') || type.includes('REMOVED')) return 'text-red-400 bg-red-500/10 border-red-500/30';
+                    if (type.includes('EDITED') || type.includes('UPDATED') || type.includes('ADJUSTED')) return 'text-blue-400 bg-blue-500/10 border-blue-500/30';
+                    if (type.includes('LOOT')) return 'text-purple-400 bg-purple-500/10 border-purple-500/30';
+                    if (type.includes('RAID')) return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+                    return 'text-slate-400 bg-slate-500/10 border-slate-500/30';
+                  };
+                  
+                  const getActionIcon = (type) => {
+                    if (type.includes('RAIDER')) return '👤';
+                    if (type.includes('LOOT')) return '⚔️';
+                    if (type.includes('RAID')) return '🏰';
+                    if (type.includes('DKP')) return '💰';
+                    if (type.includes('DECAY')) return '📉';
+                    return '📋';
+                  };
+                  
+                  const formatTime = (timestamp) => {
+                    const date = new Date(timestamp);
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+                    
+                    if (diffMins < 1) return 'Just now';
+                    if (diffMins < 60) return `${diffMins}m ago`;
+                    if (diffHours < 24) return `${diffHours}h ago`;
+                    if (diffDays < 7) return `${diffDays}d ago`;
+                    return date.toLocaleDateString();
+                  };
+                  
+                  return (
+                    <div key={activity.id} className={`p-3 rounded-lg border ${getActionColor(activity.actionType)}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <span className="text-lg">{getActionIcon(activity.actionType)}</span>
+                          <div>
+                            <p className="font-medium">{activity.description}</p>
+                            {activity.details && Object.keys(activity.details).length > 0 && (
+                              <div className="mt-1 text-xs text-slate-500">
+                                {Object.entries(activity.details)
+                                  .filter(([key, val]) => val !== null && val !== undefined && key !== 'changes')
+                                  .slice(0, 4)
+                                  .map(([key, val]) => (
+                                    <span key={key} className="mr-3">
+                                      {key.replace(/([A-Z])/g, ' $1').toLowerCase()}: <span className="text-slate-400">{String(val)}</span>
+                                    </span>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs text-slate-500 whitespace-nowrap">{formatTime(activity.timestamp)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -3029,6 +3108,8 @@ const resetRunRaidState = () => {
     addScheduledRaid: dbAddScheduledRaid,
     updateScheduledRaid: dbUpdateScheduledRaid,
     deleteScheduledRaid: dbDeleteScheduledRaid,
+    activityLog,
+    addActivity,
   } = useSupabaseState();
 
   // ============================================================================
@@ -3144,6 +3225,13 @@ const resetRunRaidState = () => {
       data: newRaider
     });
     
+    addActivity('RAIDER_ADDED', `Added new raider: ${name}`, { 
+      raiderName: name, 
+      class: cls, 
+      rank, 
+      role 
+    });
+    
     dbAddRaider(newRaider);
   };
   
@@ -3161,6 +3249,17 @@ const resetRunRaidState = () => {
         description: `Edited raider "${raider.name}"`,
         data: { id, previousValues }
       });
+      
+      const changes = Object.entries(updates)
+        .filter(([key, val]) => raider[key] !== val)
+        .map(([key, val]) => `${key}: ${raider[key]} → ${val}`)
+        .join(', ');
+      
+      addActivity('RAIDER_EDITED', `Edited raider: ${raider.name}`, { 
+        raiderName: raider.name, 
+        changes,
+        updates 
+      });
     }
     dbUpdateRaider(id, updates);
   };
@@ -3172,6 +3271,12 @@ const resetRunRaidState = () => {
         type: 'DELETE_RAIDER',
         description: `Removed raider "${raider.name}"`,
         data: raider
+      });
+      
+      addActivity('RAIDER_REMOVED', `Removed raider: ${raider.name}`, { 
+        raiderName: raider.name, 
+        class: raider.class,
+        dkp: raider.dkp 
       });
     }
     dbDeleteRaider(id);
@@ -3185,6 +3290,14 @@ const resetRunRaidState = () => {
         description: `${amt >= 0 ? 'Added' : 'Removed'} ${Math.abs(amt)} DKP ${amt >= 0 ? 'to' : 'from'} "${raider.name}"`,
         data: { id, previousValues: { dkp: raider.dkp } }
       });
+      
+      addActivity('DKP_ADJUSTED', `Manual DKP: ${raider.name} ${amt >= 0 ? '+' : ''}${amt}`, { 
+        raiderName: raider.name, 
+        amount: amt,
+        oldDkp: raider.dkp,
+        newDkp: Math.max(0, raider.dkp + amt)
+      });
+      
       dbUpdateRaider(id, { dkp: Math.max(0, raider.dkp + amt) });
     }
   };
@@ -3248,6 +3361,16 @@ const resetRunRaidState = () => {
       data: { previousValues }
     });
     
+    const totalDkpBefore = raiders.reduce((sum, r) => sum + r.dkp, 0);
+    const totalDkpAfter = raiders.reduce((sum, r) => sum + Math.floor(r.dkp * 0.5), 0);
+    
+    addActivity('DKP_DECAY', `Applied 50% DKP decay to all raiders`, { 
+      raidersAffected: raiders.length,
+      totalDkpBefore,
+      totalDkpAfter,
+      totalDkpRemoved: totalDkpBefore - totalDkpAfter
+    });
+    
     const updates = raiders.map(r => ({
       id: r.id,
       dkp: Math.floor(r.dkp * 0.5)
@@ -3260,6 +3383,13 @@ const resetRunRaidState = () => {
   // ============================================================================
   
   const scheduleRaid = (data) => {
+    addActivity('RAID_SCHEDULED', `Scheduled raid: ${TBC_RAIDS[data.raidType]?.name || data.raidType}`, { 
+      raidType: data.raidType,
+      raidName: TBC_RAIDS[data.raidType]?.name,
+      dateTime: data.dateTime,
+      rosterCount: data.roster?.length || 0
+    });
+    
     dbAddScheduledRaid({ 
       id: genId(), 
       ...data, 
@@ -3268,10 +3398,26 @@ const resetRunRaidState = () => {
   };
   
   const removeScheduled = (id) => {
+    const raid = scheduled.find(r => r.id === id);
+    if (raid) {
+      addActivity('SCHEDULED_RAID_DELETED', `Deleted scheduled raid: ${TBC_RAIDS[raid.raidType]?.name || raid.raidType}`, { 
+        raidType: raid.raidType,
+        raidName: TBC_RAIDS[raid.raidType]?.name,
+        dateTime: raid.dateTime
+      });
+    }
     dbDeleteScheduledRaid(id);
   };
   
   const updateScheduledRaid = (id, updates) => {
+    const raid = scheduled.find(r => r.id === id);
+    if (raid) {
+      addActivity('SCHEDULED_RAID_UPDATED', `Updated scheduled raid: ${TBC_RAIDS[raid.raidType]?.name || raid.raidType}`, { 
+        raidType: updates.raidType || raid.raidType,
+        raidName: TBC_RAIDS[updates.raidType || raid.raidType]?.name,
+        dateTime: updates.dateTime || raid.dateTime
+      });
+    }
     dbUpdateScheduledRaid(id, updates);
   };
 
@@ -3300,6 +3446,16 @@ const resetRunRaidState = () => {
     });
     dbBulkUpdateRaiders(raidCountUpdates);
     
+    const totalDkp = data.participants.reduce((sum, p) => sum + p.dkpEarned, 0);
+    addActivity('RAID_COMPLETED', `Completed raid: ${TBC_RAIDS[data.raidType]?.name || data.raidType}`, { 
+      raidType: data.raidType,
+      raidName: TBC_RAIDS[data.raidType]?.name,
+      bossesKilled: data.bossesKilled?.length || 0,
+      participants: data.participants?.length || 0,
+      totalDkpAwarded: totalDkp,
+      warcraftLogsUrl: data.warcraftLogsUrl || null
+    });
+    
     return finalRaidId; // Return the raid ID so loot can be associated
   };
 
@@ -3318,6 +3474,14 @@ const resetRunRaidState = () => {
           dkpCost: data.dkpCost,
           itemName: data.itemName
         }
+      });
+      
+      addActivity('LOOT_AWARDED', `${data.itemName} → ${winner.name} (-${data.dkpCost} DKP)`, { 
+        itemName: data.itemName,
+        winnerName: winner.name,
+        dkpCost: data.dkpCost,
+        category: data.category,
+        isBis: data.isBis
       });
     }
     
@@ -3338,6 +3502,17 @@ const resetRunRaidState = () => {
     if (!confirm('Are you sure you want to delete this loot entry? This will NOT refund the DKP.')) {
       return;
     }
+    
+    const loot = lootHistory.find(l => l.id === lootId);
+    if (loot) {
+      const winner = raiders.find(r => r.id === loot.winnerId);
+      addActivity('LOOT_DELETED', `Deleted loot: ${loot.itemName}`, { 
+        itemName: loot.itemName,
+        winnerName: winner?.name || 'Unknown',
+        dkpCost: loot.dkpCost
+      });
+    }
+    
     dbDeleteLoot(lootId);
   };
 
@@ -3392,6 +3567,17 @@ const resetRunRaidState = () => {
     if (!confirm('Are you sure you want to delete this raid? This action cannot be undone and will NOT reverse any DKP changes made by this raid.')) {
       return;
     }
+    
+    const raid = raidHistory.find(r => r.id === raidId);
+    if (raid) {
+      addActivity('RAID_DELETED', `Deleted raid: ${TBC_RAIDS[raid.raidType]?.name || raid.raidType}`, { 
+        raidType: raid.raidType,
+        raidName: TBC_RAIDS[raid.raidType]?.name,
+        completedAt: raid.completedAt,
+        participants: raid.participants?.length || 0
+      });
+    }
+    
     dbDeleteRaid(raidId);
   };
 
@@ -3508,6 +3694,7 @@ const resetRunRaidState = () => {
     raiders={raiders}
     raidHistory={raidHistory}
     scheduled={scheduled}
+    activityLog={activityLog}
     onAdd={addRaider}
     onEdit={editRaider}
     onRemove={removeRaider}
