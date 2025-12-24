@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient";
 
 /**
  * Custom hook for managing DKP state with normalized Supabase tables
- * Tables: raiders, raid_history, loot_history, scheduled_raids, activity_log
+ * Tables: raiders, raid_history, loot_history, scheduled_raids, activity_log, active_raid
  */
 export function useSupabaseState() {
   const [raiders, setRaiders] = useState([]);
@@ -11,6 +11,7 @@ export function useSupabaseState() {
   const [lootHistory, setLootHistory] = useState([]);
   const [scheduled, setScheduled] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
+  const [activeRaid, setActiveRaid] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -29,12 +30,13 @@ export function useSupabaseState() {
 
       try {
         // Load all tables in parallel
-        const [raidersRes, raidHistoryRes, lootHistoryRes, scheduledRes, activityRes] = await Promise.all([
+        const [raidersRes, raidHistoryRes, lootHistoryRes, scheduledRes, activityRes, activeRaidRes] = await Promise.all([
           supabase.from("raiders").select("*").order("dkp", { ascending: false }),
           supabase.from("raid_history").select("*").order("completed_at", { ascending: false }),
           supabase.from("loot_history").select("*").order("timestamp", { ascending: false }),
           supabase.from("scheduled_raids").select("*").order("date_time", { ascending: true }),
           supabase.from("activity_log").select("*").order("timestamp", { ascending: false }).limit(500),
+          supabase.from("active_raid").select("*").eq("is_active", true).single(),
         ]);
 
         if (!active) return;
@@ -44,8 +46,9 @@ export function useSupabaseState() {
         if (raidHistoryRes.error) throw raidHistoryRes.error;
         if (lootHistoryRes.error) throw lootHistoryRes.error;
         if (scheduledRes.error) throw scheduledRes.error;
-        // Activity log error is non-fatal (table might not exist yet)
+        // Activity log and active raid errors are non-fatal
         if (activityRes.error) console.warn("Activity log not available:", activityRes.error.message);
+        if (activeRaidRes.error && activeRaidRes.error.code !== 'PGRST116') console.warn("Active raid not available:", activeRaidRes.error.message);
 
         // Transform data from snake_case to camelCase for app compatibility
         setRaiders((raidersRes.data || []).map(transformRaiderFromDb));
@@ -53,6 +56,7 @@ export function useSupabaseState() {
         setLootHistory((lootHistoryRes.data || []).map(transformLootFromDb));
         setScheduled((scheduledRes.data || []).map(transformScheduledFromDb));
         setActivityLog((activityRes.data || []).map(transformActivityFromDb));
+        setActiveRaid(activeRaidRes.data ? transformActiveRaidFromDb(activeRaidRes.data) : null);
         
         setLoading(false);
       } catch (err) {
@@ -107,6 +111,20 @@ export function useSupabaseState() {
           handleRealtimeChange("scheduled", payload);
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "active_raid" },
+        (payload) => {
+          if (saving.current) return;
+          // Handle active raid updates specially
+          const { eventType, new: newRecord } = payload;
+          if (eventType === 'DELETE' || (newRecord && !newRecord.is_active)) {
+            setActiveRaid(null);
+          } else if (newRecord) {
+            setActiveRaid(transformActiveRaidFromDb(newRecord));
+          }
+        }
+      )
       .subscribe();
 
     return () => {
@@ -155,6 +173,7 @@ export function useSupabaseState() {
       id: r.id,
       name: r.name,
       class: r.class,
+      spec: r.spec || null,
       rank: r.rank,
       role: r.role || 'Melee',
       dkp: r.dkp,
@@ -168,6 +187,7 @@ export function useSupabaseState() {
       id: r.id,
       name: r.name,
       class: r.class,
+      spec: r.spec || null,
       rank: r.rank,
       role: r.role || 'Melee',
       dkp: r.dkp,
@@ -275,6 +295,98 @@ export function useSupabaseState() {
     };
   }
 
+  function transformActiveRaidFromDb(r) {
+    if (!r) return null;
+    return {
+      id: r.id,
+      raidType: r.raid_type,
+      startedAt: r.started_at,
+      participants: r.participants || [],
+      bossesKilled: r.bosses_killed || [],
+      progBosses: r.prog_bosses || [],
+      lootAwarded: r.loot_awarded || [],
+      warcraftLogsUrl: r.warcraft_logs_url,
+      isActive: r.is_active,
+    };
+  }
+
+  function transformActiveRaidToDb(r) {
+    return {
+      id: r.id || 'current',
+      raid_type: r.raidType,
+      started_at: r.startedAt ?? new Date().toISOString(),
+      participants: r.participants || [],
+      bosses_killed: r.bossesKilled || [],
+      prog_bosses: r.progBosses || [],
+      loot_awarded: r.lootAwarded || [],
+      warcraft_logs_url: r.warcraftLogsUrl || null,
+      is_active: r.isActive ?? true,
+    };
+  }
+
+  // ============================================================================
+  // ACTIVE RAID OPERATIONS
+  // ============================================================================
+
+  const startActiveRaid = useCallback(async (raidData) => {
+    setError(null);
+    const dbRaid = transformActiveRaidToDb({ ...raidData, id: 'current', isActive: true });
+    
+    // Optimistic update
+    setActiveRaid(raidData);
+    
+    saving.current = true;
+    // Use upsert to handle both insert and update
+    const { error } = await supabase.from("active_raid").upsert(dbRaid, { onConflict: 'id' });
+    saving.current = false;
+    
+    if (error) {
+      setError(error.message);
+      setActiveRaid(null);
+    }
+  }, []);
+
+  const updateActiveRaid = useCallback(async (updates) => {
+    setError(null);
+    
+    // Get current state
+    const current = activeRaid || {};
+    const updated = { ...current, ...updates };
+    
+    // Optimistic update
+    setActiveRaid(updated);
+    
+    const dbUpdates = {};
+    if (updates.participants !== undefined) dbUpdates.participants = updates.participants;
+    if (updates.bossesKilled !== undefined) dbUpdates.bosses_killed = updates.bossesKilled;
+    if (updates.progBosses !== undefined) dbUpdates.prog_bosses = updates.progBosses;
+    if (updates.lootAwarded !== undefined) dbUpdates.loot_awarded = updates.lootAwarded;
+    if (updates.warcraftLogsUrl !== undefined) dbUpdates.warcraft_logs_url = updates.warcraftLogsUrl;
+    
+    saving.current = true;
+    const { error } = await supabase.from("active_raid").update(dbUpdates).eq("id", "current");
+    saving.current = false;
+    
+    if (error) {
+      setError(error.message);
+    }
+  }, [activeRaid]);
+
+  const endActiveRaid = useCallback(async () => {
+    setError(null);
+    
+    // Optimistic update
+    setActiveRaid(null);
+    
+    saving.current = true;
+    const { error } = await supabase.from("active_raid").update({ is_active: false }).eq("id", "current");
+    saving.current = false;
+    
+    if (error) {
+      setError(error.message);
+    }
+  }, []);
+
   // ============================================================================
   // ACTIVITY LOG OPERATIONS
   // ============================================================================
@@ -328,6 +440,7 @@ export function useSupabaseState() {
     const dbUpdates = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.class !== undefined) dbUpdates.class = updates.class;
+    if (updates.spec !== undefined) dbUpdates.spec = updates.spec;
     if (updates.rank !== undefined) dbUpdates.rank = updates.rank;
     if (updates.role !== undefined) dbUpdates.role = updates.role;
     if (updates.dkp !== undefined) dbUpdates.dkp = updates.dkp;
@@ -557,6 +670,7 @@ export function useSupabaseState() {
     raidHistory,
     lootHistory,
     scheduled,
+    activeRaid,
     loading,
     error,
     
@@ -579,6 +693,11 @@ export function useSupabaseState() {
     addScheduledRaid,
     updateScheduledRaid,
     deleteScheduledRaid,
+    
+    // Active raid operations
+    startActiveRaid,
+    updateActiveRaid,
+    endActiveRaid,
     
     // Activity log
     activityLog,

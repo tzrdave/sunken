@@ -7,7 +7,7 @@ import { supabase } from "./supabaseClient";
 // THE SUNKEN DKP SYSTEM - Guild Loot Tracker for WoW Classic TBC
 // ============================================================================
 
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.6";
 
 // ============================================================================
 // DATA CONSTANTS
@@ -673,6 +673,19 @@ const WOW_CLASSES = [
   { name: "Druid", color: "#FF7D0A" }
 ];
 
+// Class specs for TBC
+const CLASS_SPECS = {
+  Warrior: ['Arms', 'Fury', 'Protection'],
+  Paladin: ['Holy', 'Protection', 'Retribution'],
+  Hunter: ['Beast Mastery', 'Marksmanship', 'Survival'],
+  Rogue: ['Assassination', 'Combat', 'Subtlety'],
+  Priest: ['Discipline', 'Holy', 'Shadow'],
+  Shaman: ['Elemental', 'Enhancement', 'Restoration'],
+  Mage: ['Arcane', 'Fire', 'Frost'],
+  Warlock: ['Affliction', 'Demonology', 'Destruction'],
+  Druid: ['Balance', 'Feral', 'Restoration']
+};
+
 
 // ============================================================================
 // UTILITIES
@@ -760,6 +773,82 @@ const Modal = ({ title, onClose, children }) => (
     </div>
   </div>
 );
+
+// ============================================================================
+// LIVE RAID BANNER (shows for all users when raid is in progress)
+// ============================================================================
+
+const LiveRaidBanner = ({ activeRaid, raiders, isAdmin }) => {
+  if (!activeRaid || !activeRaid.isActive) return null;
+  
+  const raidInfo = TBC_RAIDS[activeRaid.raidType];
+  const participantCount = activeRaid.participants?.length || 0;
+  const bossCount = activeRaid.bossesKilled?.length || 0;
+  const lootCount = activeRaid.lootAwarded?.length || 0;
+  const startTime = new Date(activeRaid.startedAt);
+  const elapsed = Math.floor((Date.now() - startTime) / 60000); // minutes
+  
+  const getRaider = (id) => raiders.find(r => r.id === id);
+  
+  return (
+    <div className="bg-gradient-to-r from-green-900/50 to-emerald-900/50 border border-green-500/50 rounded-xl p-4 mb-6 animate-pulse-slow">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center">
+            <span className="text-2xl">⚔️</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-green-500/30 text-green-400 text-xs font-bold rounded-full uppercase">
+                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                Live
+              </span>
+              <h3 className="text-lg font-bold text-green-400">{raidInfo?.name || activeRaid.raidType}</h3>
+            </div>
+            <p className="text-slate-400 text-sm">
+              Started {elapsed < 60 ? `${elapsed}m ago` : `${Math.floor(elapsed / 60)}h ${elapsed % 60}m ago`}
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-slate-100">{participantCount}</div>
+            <div className="text-xs text-slate-500">Raiders</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-400">{bossCount}/{raidInfo?.bosses?.length || 0}</div>
+            <div className="text-xs text-slate-500">Bosses</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-400">{lootCount}</div>
+            <div className="text-xs text-slate-500">Loot</div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Recent Activity */}
+      {activeRaid.lootAwarded?.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-green-500/30">
+          <p className="text-xs text-slate-500 uppercase mb-2">Recent Loot</p>
+          <div className="flex flex-wrap gap-2">
+            {activeRaid.lootAwarded.slice(-5).reverse().map((loot, idx) => {
+              const winner = getRaider(loot.winnerId);
+              return (
+                <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg text-sm">
+                  <span className="text-purple-400">{loot.itemName}</span>
+                  <span className="text-slate-500">→</span>
+                  <span style={{ color: getClassColor(winner?.class) }}>{winner?.name || 'Unknown'}</span>
+                  <span className="text-red-400 text-xs">-{loot.dkpCost}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================================================
 // RAIDER PROFILE MODAL
@@ -2555,10 +2644,11 @@ const ResourcesTab = () => {
 // ADMIN TAB
 // ============================================================================
 
-const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit, onRemove, onUpdateDKP, onBulkUpdateDKP, onSetDKP, onDecay, onComplete, onRecordLoot, canUndo, lastAction, onUndo, runRaidState, updateRunRaidState, resetRunRaidState }) => {
+const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, activeRaid, onAdd, onEdit, onRemove, onUpdateDKP, onBulkUpdateDKP, onSetDKP, onDecay, onComplete, onRecordLoot, onStartRaid, onUpdateActiveRaid, onEndRaid, canUndo, lastAction, onUndo, runRaidState, updateRunRaidState, resetRunRaidState }) => {
   const [subTab, setSubTab] = useState('raiders');
   const [newName, setNewName] = useState('');
   const [newClass, setNewClass] = useState('Warrior');
+  const [newSpec, setNewSpec] = useState('');
   const [newRank, setNewRank] = useState('Trial');
   const [newRole, setNewRole] = useState('Melee');
   
@@ -2566,6 +2656,7 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
   const [editingRaider, setEditingRaider] = useState(null);
   const [editName, setEditName] = useState('');
   const [editClass, setEditClass] = useState('');
+  const [editSpec, setEditSpec] = useState('');
   const [editRank, setEditRank] = useState('');
   const [editRole, setEditRole] = useState('');
 
@@ -2625,13 +2716,14 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
     setEditingRaider(raider.id);
     setEditName(raider.name);
     setEditClass(raider.class);
+    setEditSpec(raider.spec || '');
     setEditRank(raider.rank);
     setEditRole(raider.role || 'Melee');
   };
   
   const saveEditRaider = () => {
     if (!editName.trim()) return;
-    onEdit(editingRaider, { name: editName.trim(), class: editClass, rank: editRank, role: editRole });
+    onEdit(editingRaider, { name: editName.trim(), class: editClass, spec: editSpec || null, rank: editRank, role: editRole });
     setEditingRaider(null);
   };
   
@@ -2642,8 +2734,9 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
   const handleAddRaider = (e) => {
     if (e) e.preventDefault();
     if (!newName.trim()) return;
-    onAdd(newName.trim(), newClass, newRank, newRole);
+    onAdd(newName.trim(), newClass, newSpec || null, newRank, newRole);
     setNewName('');
+    setNewSpec('');
   };
 
   const toggleRaider = (id) => {
@@ -2750,6 +2843,11 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
     // Record loot with the same raid ID
     lootItems.forEach(item => onRecordLoot({ ...item, raidId }));
     
+    // End the active raid if there is one
+    if (activeRaid && activeRaid.isActive) {
+      onEndRaid();
+    }
+    
     // Reset all Run Raid state
     resetRunRaidState();
     setSelectedLootItem(null); setCustomLootItemName(''); setLootItemSearch('');
@@ -2773,9 +2871,13 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
     e.preventDefault();
     const itemName = selectedLootItem ? selectedLootItem.name : customLootItemName;
     if (!itemName || !lootWinner) return;
+    
+    // Get the raider's CURRENT DKP from the raiders array (which has real-time updates)
     const winner = raiders.find(r => r.id === lootWinner);
-    const cost = winner ? calcCost(winner.dkp, lootCat, lootBis) : 0;
-    setLootItems(p => [...p, { 
+    if (!winner) return;
+    
+    const cost = calcCost(winner.dkp, lootCat, lootBis);
+    const newLootItem = { 
       id: genId(), 
       itemName, 
       winnerId: lootWinner, 
@@ -2783,7 +2885,17 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
       isBis: lootBis, 
       dkpCost: cost,
       wowheadId: selectedLootItem?.id || null
-    }]);
+    };
+    
+    setLootItems(p => [...p, newLootItem]);
+    
+    // If there's an active raid, update it with the new loot
+    if (activeRaid && activeRaid.isActive) {
+      onUpdateActiveRaid({
+        lootAwarded: [...(activeRaid.lootAwarded || []), newLootItem]
+      });
+    }
+    
     setShowLootModal(false); 
     resetLootSelection();
     setLootWinner('');
@@ -2827,8 +2939,12 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
             <h3 className="text-lg font-semibold text-amber-400 mb-4">Add New Raider</h3>
             <form onSubmit={handleAddRaider} className="flex flex-wrap gap-4">
               <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Character name" className="flex-1 min-w-[200px] px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50" />
-              <select value={newClass} onChange={e => setNewClass(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
+              <select value={newClass} onChange={e => { setNewClass(e.target.value); setNewSpec(''); }} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
                 {WOW_CLASSES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+              <select value={newSpec} onChange={e => setNewSpec(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
+                <option value="">Select Spec</option>
+                {(CLASS_SPECS[newClass] || []).map(spec => <option key={spec} value={spec}>{spec}</option>)}
               </select>
               <select value={newRole} onChange={e => setNewRole(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
                 {RAIDER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
@@ -2856,10 +2972,18 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
                         />
                         <select 
                           value={editClass} 
-                          onChange={e => setEditClass(e.target.value)} 
+                          onChange={e => { setEditClass(e.target.value); setEditSpec(''); }} 
                           className="px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50"
                         >
                           {WOW_CLASSES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                        </select>
+                        <select 
+                          value={editSpec} 
+                          onChange={e => setEditSpec(e.target.value)} 
+                          className="px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        >
+                          <option value="">No Spec</option>
+                          {(CLASS_SPECS[editClass] || []).map(spec => <option key={spec} value={spec}>{spec}</option>)}
                         </select>
                         <select 
                           value={editRole} 
@@ -2886,7 +3010,9 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                           <span className="font-semibold text-slate-100">{r.name}</span>
-                          <span className="px-2 py-0.5 rounded text-sm" style={{ color: getClassColor(r.class), backgroundColor: `${getClassColor(r.class)}20` }}>{r.class}</span>
+                          <span className="px-2 py-0.5 rounded text-sm" style={{ color: getClassColor(r.class), backgroundColor: `${getClassColor(r.class)}20` }}>
+                            {r.class}{r.spec ? ` (${r.spec})` : ''}
+                          </span>
                           <span className={`px-2 py-0.5 rounded text-xs ${
                             r.role === 'Tank' ? 'bg-blue-500/20 text-blue-400' :
                             r.role === 'Healer' ? 'bg-green-500/20 text-green-400' :
@@ -2913,6 +3039,45 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
       {/* RUN RAID */}
       {subTab === 'runraid' && (
         <div className="space-y-6">
+          {/* Live Raid Status */}
+          {activeRaid && activeRaid.isActive && (
+            <div className="bg-gradient-to-r from-green-900/50 to-emerald-900/50 border border-green-500/50 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-500/30 text-green-400 text-sm font-bold rounded-full uppercase">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    Raid In Progress
+                  </span>
+                  <h3 className="text-xl font-bold text-green-400">{TBC_RAIDS[activeRaid.raidType]?.name}</h3>
+                </div>
+                <button 
+                  onClick={() => {
+                    if (confirm('End this raid? This will stop the live broadcast.')) {
+                      onEndRaid();
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg"
+                >
+                  End Raid
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-slate-100">{activeRaid.participants?.length || 0}</div>
+                  <div className="text-xs text-slate-500">Raiders</div>
+                </div>
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-green-400">{activeRaid.bossesKilled?.length || 0}</div>
+                  <div className="text-xs text-slate-500">Bosses Down</div>
+                </div>
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-purple-400">{activeRaid.lootAwarded?.length || 0}</div>
+                  <div className="text-xs text-slate-500">Loot Awarded</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Upcoming Scheduled Raids */}
           {(() => {
             const now = new Date();
@@ -3090,7 +3255,39 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
             )}
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
+            {/* Start Raid Button (only if no active raid) */}
+            {(!activeRaid || !activeRaid.isActive) && (
+              <button 
+                onClick={() => {
+                  if (selectedRaiders.length === 0) {
+                    alert('Please select raiders before starting the raid.');
+                    return;
+                  }
+                  if (confirm(`Start live broadcast for ${TBC_RAIDS[selectedRaid]?.name}? This will be visible to all users.`)) {
+                    onStartRaid({
+                      raidType: selectedRaid,
+                      participants: selectedRaiders.map(id => ({
+                        raiderId: id,
+                        dkpEarned: 0,
+                        bonuses: raiderBonuses[id] || {}
+                      })),
+                      bossesKilled: [],
+                      progBosses: [],
+                      lootAwarded: [],
+                      warcraftLogsUrl: warcraftLogsUrl,
+                      startedAt: new Date().toISOString(),
+                      isActive: true
+                    });
+                  }
+                }}
+                disabled={selectedRaiders.length === 0}
+                className="px-6 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                🎬 Start Live Raid
+              </button>
+            )}
+            
             <button 
               onClick={handleAwardDKP} 
               disabled={dkpAwarded || selectedRaiders.length === 0}
@@ -3405,6 +3602,7 @@ const resetRunRaidState = () => {
     raidHistory,
     lootHistory,
     scheduled,
+    activeRaid,
     loading,
     error,
     addRaider: dbAddRaider,
@@ -3419,6 +3617,9 @@ const resetRunRaidState = () => {
     addScheduledRaid: dbAddScheduledRaid,
     updateScheduledRaid: dbUpdateScheduledRaid,
     deleteScheduledRaid: dbDeleteScheduledRaid,
+    startActiveRaid: dbStartActiveRaid,
+    updateActiveRaid: dbUpdateActiveRaid,
+    endActiveRaid: dbEndActiveRaid,
     activityLog,
     addActivity,
   } = useSupabaseState();
@@ -3523,11 +3724,12 @@ const resetRunRaidState = () => {
   // RAIDER OPERATIONS (with undo support)
   // ============================================================================
   
-  const addRaider = (name, cls, rank, role = 'Melee') => {
+  const addRaider = (name, cls, spec, rank, role = 'Melee') => {
     const newRaider = { 
       id: genId(), 
       name, 
-      class: cls, 
+      class: cls,
+      spec: spec || null,
       rank,
       role, 
       dkp: 0, 
@@ -3543,7 +3745,8 @@ const resetRunRaidState = () => {
     
     addActivity('RAIDER_ADDED', `Added new raider: ${name}`, { 
       raiderName: name, 
-      class: cls, 
+      class: cls,
+      spec: spec || null,
       rank, 
       role 
     });
@@ -4000,6 +4203,9 @@ const resetRunRaidState = () => {
       </nav>
 
       <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Live Raid Banner - visible to all users */}
+        <LiveRaidBanner activeRaid={activeRaid} raiders={raiders} isAdmin={isAdmin} />
+        
         {tab === 'roster' && <RosterTab raiders={raiders} raidHistory={raidHistory} lootHistory={lootHistory} isAdmin={isAdmin} onUpdateDKP={updateDKP} onRemove={removeRaider} onPromote={promoteRaider} />}
         {tab === 'raids' && <RaidsTab scheduled={scheduled} raiders={raiders} isAdmin={isAdmin} onSchedule={scheduleRaid} onRemove={removeScheduled} onUpdateScheduled={updateScheduledRaid} />}
         {tab === 'history' && <HistoryTab raidHistory={raidHistory} lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onEditRaid={editRaid} onDeleteRaid={deleteRaidFromHistory} />}
@@ -4011,6 +4217,7 @@ const resetRunRaidState = () => {
     raidHistory={raidHistory}
     scheduled={scheduled}
     activityLog={activityLog}
+    activeRaid={activeRaid}
     onAdd={addRaider}
     onEdit={editRaider}
     onRemove={removeRaider}
@@ -4020,6 +4227,9 @@ const resetRunRaidState = () => {
     onDecay={applyDecay}
     onComplete={completeRaid}
     onRecordLoot={recordLoot}
+    onStartRaid={dbStartActiveRaid}
+    onUpdateActiveRaid={dbUpdateActiveRaid}
+    onEndRaid={dbEndActiveRaid}
     canUndo={canUndo}
     lastAction={lastAction}
     onUndo={performUndo}
