@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   // IMPORTANT: Set base to your repo name for GitHub Pages
-  base: '/sunken-dkp/',
+  base: '/sunken/',
   build: {
     // Increase the chunk size warning limit (in kB)
     chunkSizeWarningLimit: 1000,
