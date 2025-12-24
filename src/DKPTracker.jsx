@@ -7,21 +7,30 @@ import { supabase } from "./supabaseClient";
 // THE SUNKEN DKP SYSTEM - Guild Loot Tracker for WoW Classic TBC
 // ============================================================================
 
+const APP_VERSION = "1.0.3";
+
 // ============================================================================
 // DATA CONSTANTS
 // ============================================================================
 
+// Raider roles for filtering
+const RAIDER_ROLES = ['Tank', 'Healer', 'Melee', 'Ranged'];
+
+// Raid sizes: 10-man = 2 groups, 25-man = 5 groups
 const TBC_RAIDS = {
-  karazhan: { name: "Karazhan", shortName: "Kara", bosses: ["Attumen the Huntsman", "Moroes", "Maiden of Virtue", "Opera Event", "The Curator", "Shade of Aran", "Terestian Illhoof", "Netherspite", "Chess Event", "Prince Malchezaar", "Nightbane"] },
-  gruul: { name: "Gruul's Lair", shortName: "Gruul", bosses: ["High King Maulgar", "Gruul the Dragonkiller"] },
-  magtheridon: { name: "Magtheridon's Lair", shortName: "Mag", bosses: ["Magtheridon"] },
-  ssc: { name: "Serpentshrine Cavern", shortName: "SSC", bosses: ["Hydross the Unstable", "The Lurker Below", "Leotheras the Blind", "Fathom-Lord Karathress", "Morogrim Tidewalker", "Lady Vashj"] },
-  tk: { name: "Tempest Keep: The Eye", shortName: "TK", bosses: ["Al'ar", "Void Reaver", "High Astromancer Solarian", "Kael'thas Sunstrider"] },
-  hyjal: { name: "Battle for Mount Hyjal", shortName: "Hyjal", bosses: ["Rage Winterchill", "Anetheron", "Kaz'rogal", "Azgalor", "Archimonde"] },
-  bt: { name: "Black Temple", shortName: "BT", bosses: ["High Warlord Naj'entus", "Supremus", "Shade of Akama", "Teron Gorefiend", "Gurtogg Bloodboil", "Reliquary of Souls", "Mother Shahraz", "Illidari Council", "Illidan Stormrage"] },
-  sunwell: { name: "Sunwell Plateau", shortName: "SWP", bosses: ["Kalecgos", "Brutallus", "Felmyst", "Eredar Twins", "M'uru", "Kil'jaeden"] },
-  za: { name: "Zul'Aman", shortName: "ZA", bosses: ["Nalorakk", "Akil'zon", "Jan'alai", "Halazzi", "Hex Lord Malacrass", "Zul'jin"] }
+  karazhan: { name: "Karazhan", shortName: "Kara", size: 10, bosses: ["Attumen the Huntsman", "Moroes", "Maiden of Virtue", "Opera Event", "The Curator", "Shade of Aran", "Terestian Illhoof", "Netherspite", "Chess Event", "Prince Malchezaar", "Nightbane"] },
+  gruul: { name: "Gruul's Lair", shortName: "Gruul", size: 25, bosses: ["High King Maulgar", "Gruul the Dragonkiller"] },
+  magtheridon: { name: "Magtheridon's Lair", shortName: "Mag", size: 25, bosses: ["Magtheridon"] },
+  ssc: { name: "Serpentshrine Cavern", shortName: "SSC", size: 25, bosses: ["Hydross the Unstable", "The Lurker Below", "Leotheras the Blind", "Fathom-Lord Karathress", "Morogrim Tidewalker", "Lady Vashj"] },
+  tk: { name: "Tempest Keep: The Eye", shortName: "TK", size: 25, bosses: ["Al'ar", "Void Reaver", "High Astromancer Solarian", "Kael'thas Sunstrider"] },
+  hyjal: { name: "Battle for Mount Hyjal", shortName: "Hyjal", size: 25, bosses: ["Rage Winterchill", "Anetheron", "Kaz'rogal", "Azgalor", "Archimonde"] },
+  bt: { name: "Black Temple", shortName: "BT", size: 25, bosses: ["High Warlord Naj'entus", "Supremus", "Shade of Akama", "Teron Gorefiend", "Gurtogg Bloodboil", "Reliquary of Souls", "Mother Shahraz", "Illidari Council", "Illidan Stormrage"] },
+  sunwell: { name: "Sunwell Plateau", shortName: "SWP", size: 25, bosses: ["Kalecgos", "Brutallus", "Felmyst", "Eredar Twins", "M'uru", "Kil'jaeden"] },
+  za: { name: "Zul'Aman", shortName: "ZA", size: 10, bosses: ["Nalorakk", "Akil'zon", "Jan'alai", "Halazzi", "Hex Lord Malacrass", "Zul'jin"] }
 };
+
+// Helper to get number of groups for a raid
+const getRaidGroupCount = (raidType) => TBC_RAIDS[raidType]?.size === 10 ? 2 : 5;
 
 // TBC Raid Loot Tables - Wowhead Item IDs for tooltip integration
 // Format: { id: wowheadItemId, name: "Item Name", cat: "category" }
@@ -753,19 +762,25 @@ const Modal = ({ title, onClose, children }) => (
 );
 
 // ============================================================================
-// STANDINGS TAB
+// ROSTER TAB (formerly Standings)
 // ============================================================================
 
-const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
+const RosterTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) => {
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [showChart, setShowChart] = useState(true);
 
   const filtered = useMemo(() => {
     return [...raiders]
-      .filter(r => r.name.toLowerCase().includes(search.toLowerCase()) && (classFilter === 'all' || r.class === classFilter))
+      .filter(r => {
+        const matchesSearch = r.name.toLowerCase().includes(search.toLowerCase());
+        const matchesClass = classFilter === 'all' || r.class === classFilter;
+        const matchesRole = roleFilter === 'all' || r.role === roleFilter;
+        return matchesSearch && matchesClass && matchesRole;
+      })
       .sort((a, b) => b.dkp - a.dkp);
-  }, [raiders, search, classFilter]);
+  }, [raiders, search, classFilter, roleFilter]);
 
   // Get top 15 raiders for chart
   const chartData = useMemo(() => {
@@ -778,7 +793,7 @@ const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) =>
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-amber-400">DKP Standings</h2>
+          <h2 className="text-2xl font-bold text-amber-400">Roster</h2>
           <p className="text-slate-400 text-sm mt-1">{raiders.length} total raiders</p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -788,6 +803,11 @@ const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) =>
             className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50 text-sm">
             <option value="all">All Classes</option>
             {WOW_CLASSES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+            className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50 text-sm">
+            <option value="all">All Roles</option>
+            {RAIDER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
           </select>
           <button 
             onClick={() => setShowChart(!showChart)}
@@ -832,6 +852,7 @@ const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) =>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">#</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Raider</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Class</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Rank</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">DKP</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Raids</th>
@@ -840,7 +861,7 @@ const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) =>
             </thead>
             <tbody className="divide-y divide-slate-700/30">
               {filtered.length === 0 ? (
-                <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-12 text-center text-slate-500">
+                <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-12 text-center text-slate-500">
                   {raiders.length === 0 ? 'No raiders added yet' : 'No results'}
                 </td></tr>
               ) : filtered.map((r, i) => (
@@ -855,6 +876,14 @@ const StandingsTab = ({ raiders, isAdmin, onUpdateDKP, onRemove, onPromote }) =>
                   <td className="px-4 py-3 font-semibold text-slate-100">{r.name}</td>
                   <td className="px-4 py-3">
                     <span className="px-2 py-1 rounded text-sm font-medium" style={{ color: getClassColor(r.class), backgroundColor: `${getClassColor(r.class)}15` }}>{r.class}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      r.role === 'Tank' ? 'bg-blue-500/20 text-blue-400' :
+                      r.role === 'Healer' ? 'bg-green-500/20 text-green-400' :
+                      r.role === 'Melee' ? 'bg-red-500/20 text-red-400' :
+                      r.role === 'Ranged' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-500/20 text-slate-400'
+                    }`}>{r.role || 'N/A'}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -909,17 +938,44 @@ const RaidsTab = ({ scheduled, raiders, isAdmin, onSchedule, onRemove, onUpdateS
   const [raidType, setRaidType] = useState('karazhan');
   const [dateTime, setDateTime] = useState('');
   const [notes, setNotes] = useState('');
-  const [selectedRoster, setSelectedRoster] = useState([]);
+  
+  // Group-based roster: { group1: [id1, id2], group2: [id3], ..., bench: [id4, id5] }
+  const [rosterGroups, setRosterGroups] = useState({ group1: [], group2: [], bench: [] });
+  
+  // Selected raider for click-to-assign
+  const [selectedDragRaider, setSelectedDragRaider] = useState(null);
 
   const now = new Date();
   const upcoming = useMemo(() => scheduled.filter(r => new Date(r.dateTime) > now).sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime)), [scheduled]);
   const pastScheduled = useMemo(() => scheduled.filter(r => new Date(r.dateTime) <= now).sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime)), [scheduled]);
 
+  // Get group count based on raid size
+  const groupCount = getRaidGroupCount(raidType);
+  const groupNames = useMemo(() => {
+    const names = [];
+    for (let i = 1; i <= groupCount; i++) {
+      names.push(`group${i}`);
+    }
+    names.push('bench');
+    return names;
+  }, [groupCount]);
+
+  // Get all assigned raider IDs
+  const assignedRaiders = useMemo(() => {
+    return Object.values(rosterGroups).flat();
+  }, [rosterGroups]);
+
+  // Get unassigned raiders
+  const unassignedRaiders = useMemo(() => {
+    return raiders.filter(r => !assignedRaiders.includes(r.id));
+  }, [raiders, assignedRaiders]);
+
   const resetForm = () => {
     setRaidType('karazhan');
     setDateTime('');
     setNotes('');
-    setSelectedRoster([]);
+    setRosterGroups({ group1: [], group2: [], bench: [] });
+    setSelectedDragRaider(null);
     setEditingRaid(null);
   };
 
@@ -928,19 +984,48 @@ const RaidsTab = ({ scheduled, raiders, isAdmin, onSchedule, onRemove, onUpdateS
     setShowModal(true);
   };
 
+  // Convert old roster format to groups or load existing groups
+  const loadRosterGroups = (raid) => {
+    if (raid.rosterGroups) {
+      // New format - use directly
+      return raid.rosterGroups;
+    } else if (raid.roster && raid.roster.length > 0) {
+      // Old format - convert to groups
+      const groups = {};
+      const gc = getRaidGroupCount(raid.raidType);
+      for (let i = 1; i <= gc; i++) {
+        groups[`group${i}`] = [];
+      }
+      groups.bench = [];
+      
+      // Distribute old roster into groups
+      raid.roster.forEach((id, idx) => {
+        const groupNum = Math.floor(idx / 5) + 1;
+        if (groupNum <= gc) {
+          groups[`group${groupNum}`].push(id);
+        } else {
+          groups.bench.push(id);
+        }
+      });
+      return groups;
+    }
+    // Empty groups
+    const groups = {};
+    const gc = getRaidGroupCount(raid.raidType);
+    for (let i = 1; i <= gc; i++) {
+      groups[`group${i}`] = [];
+    }
+    groups.bench = [];
+    return groups;
+  };
+
   const openEditModal = (raid) => {
     setEditingRaid(raid.id);
     setRaidType(raid.raidType);
-    // The datetime from DB might be in ISO format with timezone
-    // We need to extract just the YYYY-MM-DDTHH:MM part for the input
-    // If it's already in the right format, use it directly
     let formattedDateTime = raid.dateTime;
     if (raid.dateTime && raid.dateTime.includes('T')) {
-      // Take just the first 16 characters: YYYY-MM-DDTHH:MM
       formattedDateTime = raid.dateTime.substring(0, 16);
     } else if (raid.dateTime) {
-      // Try to parse and format, but preserve the time as-is without timezone conversion
-      // This handles cases where the date might be in a different format
       const match = raid.dateTime.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
       if (match) {
         formattedDateTime = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}`;
@@ -948,35 +1033,100 @@ const RaidsTab = ({ scheduled, raiders, isAdmin, onSchedule, onRemove, onUpdateS
     }
     setDateTime(formattedDateTime);
     setNotes(raid.notes || '');
-    setSelectedRoster(raid.roster || []);
+    setRosterGroups(loadRosterGroups(raid));
     setShowModal(true);
   };
 
-  const toggleRosterMember = (raiderId) => {
-    setSelectedRoster(prev => 
-      prev.includes(raiderId) ? prev.filter(id => id !== raiderId) : [...prev, raiderId]
-    );
+  // Add raider to a group
+  const addToGroup = (raiderId, groupName) => {
+    // Remove from any existing group first
+    const newGroups = { ...rosterGroups };
+    Object.keys(newGroups).forEach(g => {
+      newGroups[g] = newGroups[g].filter(id => id !== raiderId);
+    });
+    // Add to new group
+    if (!newGroups[groupName]) newGroups[groupName] = [];
+    newGroups[groupName] = [...newGroups[groupName], raiderId];
+    setRosterGroups(newGroups);
   };
 
-  const selectAllRaiders = () => setSelectedRoster(raiders.map(r => r.id));
-  const clearRoster = () => setSelectedRoster([]);
+  // Remove raider from all groups
+  const removeFromGroups = (raiderId) => {
+    const newGroups = { ...rosterGroups };
+    Object.keys(newGroups).forEach(g => {
+      newGroups[g] = newGroups[g].filter(id => id !== raiderId);
+    });
+    setRosterGroups(newGroups);
+  };
+
+  // Move raider between groups
+  const moveRaider = (raiderId, fromGroup, toGroup) => {
+    const newGroups = { ...rosterGroups };
+    newGroups[fromGroup] = newGroups[fromGroup].filter(id => id !== raiderId);
+    if (!newGroups[toGroup]) newGroups[toGroup] = [];
+    newGroups[toGroup] = [...newGroups[toGroup], raiderId];
+    setRosterGroups(newGroups);
+  };
+
+  // Clear all groups
+  const clearAllGroups = () => {
+    const newGroups = {};
+    groupNames.forEach(g => newGroups[g] = []);
+    setRosterGroups(newGroups);
+  };
+
+  // Get flat roster for backwards compatibility
+  const getFlatRoster = () => {
+    const flat = [];
+    for (let i = 1; i <= groupCount; i++) {
+      flat.push(...(rosterGroups[`group${i}`] || []));
+    }
+    // Bench is not included in the main roster
+    return flat;
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!dateTime) return;
     
+    // Include both flat roster (for backwards compat) and rosterGroups
+    const rosterData = {
+      raidType, 
+      dateTime, 
+      notes, 
+      roster: getFlatRoster(),
+      rosterGroups: rosterGroups
+    };
+    
     if (editingRaid) {
-      onUpdateScheduled(editingRaid, { raidType, dateTime, notes, roster: selectedRoster });
+      onUpdateScheduled(editingRaid, rosterData);
     } else {
-      onSchedule({ raidType, dateTime, notes, roster: selectedRoster });
+      onSchedule(rosterData);
     }
     
     setShowModal(false);
     resetForm();
   };
 
+  // When raid type changes, reset groups with correct count
+  const handleRaidTypeChange = (newType) => {
+    setRaidType(newType);
+    const gc = getRaidGroupCount(newType);
+    const newGroups = {};
+    for (let i = 1; i <= gc; i++) {
+      newGroups[`group${i}`] = rosterGroups[`group${i}`] || [];
+    }
+    newGroups.bench = rosterGroups.bench || [];
+    setRosterGroups(newGroups);
+  };
+
   const getRaiderName = (id) => raiders.find(r => r.id === id)?.name || 'Unknown';
   const getRaiderClass = (id) => raiders.find(r => r.id === id)?.class || null;
+  const getRaider = (id) => raiders.find(r => r.id === id);
+
+  // Get total roster count (not including bench)
+  const totalRosterCount = getFlatRoster().length;
+  const benchCount = (rosterGroups.bench || []).length;
 
   return (
     <div className="space-y-6">
@@ -1048,24 +1198,81 @@ const RaidsTab = ({ scheduled, raiders, isAdmin, onSchedule, onRemove, onUpdateS
                     </div>
                   </div>
                   
-                  {/* Expanded Roster View */}
-                  {isExpanded && raid.roster && raid.roster.length > 0 && (
+                  {/* Expanded Roster View with Groups */}
+                  {isExpanded && (raid.roster?.length > 0 || raid.rosterGroups) && (
                     <div className="border-t border-slate-700/50 p-4 bg-slate-900/30">
-                      <h5 className="text-sm font-semibold text-slate-400 uppercase mb-3">Roster</h5>
-                      <div className="flex flex-wrap gap-2">
-                        {raid.roster.map(raiderId => (
-                          <span 
-                            key={raiderId} 
-                            className="px-3 py-1 rounded-full text-sm font-medium"
-                            style={{ 
-                              color: getClassColor(getRaiderClass(raiderId)), 
-                              backgroundColor: `${getClassColor(getRaiderClass(raiderId))}20` 
-                            }}
-                          >
-                            {getRaiderName(raiderId)}
-                          </span>
-                        ))}
-                      </div>
+                      {raid.rosterGroups ? (
+                        // New group format
+                        <div className="space-y-4">
+                          {/* Raid Groups */}
+                          <div className={`grid gap-3 ${getRaidGroupCount(raid.raidType) === 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'}`}>
+                            {Object.entries(raid.rosterGroups).filter(([g]) => g !== 'bench').map(([groupName, members]) => (
+                              <div key={groupName} className="bg-slate-800/50 rounded-lg p-3">
+                                <h6 className="text-xs font-semibold text-slate-500 uppercase mb-2">
+                                  Group {groupName.replace('group', '')} ({members.length}/5)
+                                </h6>
+                                <div className="flex flex-wrap gap-1">
+                                  {members.map(raiderId => (
+                                    <span 
+                                      key={raiderId} 
+                                      className="px-2 py-0.5 rounded text-xs font-medium"
+                                      style={{ 
+                                        color: getClassColor(getRaiderClass(raiderId)), 
+                                        backgroundColor: `${getClassColor(getRaiderClass(raiderId))}20` 
+                                      }}
+                                    >
+                                      {getRaiderName(raiderId)}
+                                    </span>
+                                  ))}
+                                  {members.length === 0 && <span className="text-slate-600 text-xs">Empty</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          {/* Bench */}
+                          {raid.rosterGroups.bench?.length > 0 && (
+                            <div className="bg-orange-900/20 border border-orange-500/30 rounded-lg p-3">
+                              <h6 className="text-xs font-semibold text-orange-400 uppercase mb-2">
+                                Bench ({raid.rosterGroups.bench.length})
+                              </h6>
+                              <div className="flex flex-wrap gap-1">
+                                {raid.rosterGroups.bench.map(raiderId => (
+                                  <span 
+                                    key={raiderId} 
+                                    className="px-2 py-0.5 rounded text-xs font-medium"
+                                    style={{ 
+                                      color: getClassColor(getRaiderClass(raiderId)), 
+                                      backgroundColor: `${getClassColor(getRaiderClass(raiderId))}20` 
+                                    }}
+                                  >
+                                    {getRaiderName(raiderId)}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        // Old flat roster format
+                        <>
+                          <h5 className="text-sm font-semibold text-slate-400 uppercase mb-3">Roster</h5>
+                          <div className="flex flex-wrap gap-2">
+                            {raid.roster.map(raiderId => (
+                              <span 
+                                key={raiderId} 
+                                className="px-3 py-1 rounded-full text-sm font-medium"
+                                style={{ 
+                                  color: getClassColor(getRaiderClass(raiderId)), 
+                                  backgroundColor: `${getClassColor(getRaiderClass(raiderId))}20` 
+                                }}
+                              >
+                                {getRaiderName(raiderId)}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1142,39 +1349,104 @@ const RaidsTab = ({ scheduled, raiders, isAdmin, onSchedule, onRemove, onUpdateS
                 />
               </div>
 
-              {/* Roster Selection */}
+              {/* Roster Groups */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-slate-400">
-                    Roster <span className="text-slate-500">({selectedRoster.length} selected)</span>
+                    Roster Groups <span className="text-slate-500">({totalRosterCount} in raid, {benchCount} bench)</span>
                   </label>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={selectAllRaiders} className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Select All</button>
-                    <button type="button" onClick={clearRoster} className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Clear</button>
-                  </div>
+                  <button type="button" onClick={clearAllGroups} className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Clear All</button>
                 </div>
                 
-                <div className="max-h-48 overflow-y-auto bg-slate-900/50 rounded-lg border border-slate-700/50 p-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {raiders.map(raider => (
-                      <button
-                        key={raider.id}
-                        type="button"
-                        onClick={() => toggleRosterMember(raider.id)}
-                        className={`p-2 rounded-lg text-left text-sm transition-colors ${
-                          selectedRoster.includes(raider.id)
-                            ? 'bg-amber-500/20 border border-amber-500/50'
-                            : 'bg-slate-800/50 border border-slate-700/30 hover:border-slate-600'
-                        }`}
-                      >
-                        <span style={{ color: getClassColor(raider.class) }} className="font-medium">{raider.name}</span>
-                        <span className="text-slate-500 text-xs ml-1">({raider.rank})</span>
-                      </button>
-                    ))}
+                <div className="space-y-3">
+                  {/* Groups - Click to drop selected raider */}
+                  <div className={`grid gap-3 ${groupCount === 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'}`}>
+                    {groupNames.map(groupName => {
+                      const isBench = groupName === 'bench';
+                      const groupLabel = isBench ? 'Bench' : `Group ${groupName.replace('group', '')}`;
+                      const groupRaiders = rosterGroups[groupName] || [];
+                      
+                      return (
+                        <div 
+                          key={groupName} 
+                          onClick={() => {
+                            if (selectedDragRaider) {
+                              addToGroup(selectedDragRaider, groupName);
+                              setSelectedDragRaider(null);
+                            }
+                          }}
+                          className={`bg-slate-900/50 rounded-lg border p-3 transition-all ${
+                            isBench ? 'border-orange-500/30 col-span-full' : 'border-slate-700/50'
+                          } ${selectedDragRaider ? 'cursor-pointer hover:border-amber-500/50 hover:bg-slate-800/50' : ''}`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`text-sm font-medium ${isBench ? 'text-orange-400' : 'text-slate-300'}`}>
+                              {groupLabel} ({groupRaiders.length}{!isBench && '/5'})
+                            </span>
+                            {selectedDragRaider && <span className="text-xs text-amber-400">Click to add</span>}
+                          </div>
+                          
+                          {/* Raiders in this group */}
+                          <div className="flex flex-wrap gap-1 min-h-[32px]">
+                            {groupRaiders.map(raiderId => {
+                              const raider = getRaider(raiderId);
+                              if (!raider) return null;
+                              return (
+                                <div 
+                                  key={raiderId} 
+                                  className="flex items-center gap-1 px-2 py-1 bg-slate-800 rounded text-xs group"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <span style={{ color: getClassColor(raider.class) }} className="font-medium">{raider.name}</span>
+                                  <button 
+                                    type="button" 
+                                    onClick={(e) => { e.stopPropagation(); removeFromGroups(raiderId); }}
+                                    className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {groupRaiders.length === 0 && (
+                              <span className="text-slate-600 text-xs italic">
+                                {selectedDragRaider ? 'Click to add here' : 'Empty'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  {raiders.length === 0 && (
-                    <p className="text-center text-slate-500 py-4">No raiders available. Add raiders first.</p>
-                  )}
+                  
+                  {/* Unassigned Raiders - Click to select, then click group */}
+                  <div className="bg-slate-900/30 rounded-lg border border-dashed border-slate-700/50 p-3">
+                    <p className="text-xs text-slate-500 mb-2">
+                      {selectedDragRaider 
+                        ? <span className="text-amber-400">Now click a group above to place the raider, or click another raider</span>
+                        : 'Click a raider, then click a group to assign:'}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {unassignedRaiders.length === 0 ? (
+                        <span className="text-slate-600 text-xs italic">All raiders assigned</span>
+                      ) : (
+                        unassignedRaiders.map(raider => (
+                          <button
+                            key={raider.id}
+                            type="button"
+                            onClick={() => setSelectedDragRaider(selectedDragRaider === raider.id ? null : raider.id)}
+                            className={`px-2 py-1 rounded text-xs border transition-all ${
+                              selectedDragRaider === raider.id 
+                                ? 'bg-amber-500/30 border-amber-500 ring-2 ring-amber-500/50' 
+                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700/30'
+                            }`}
+                          >
+                            <span style={{ color: getClassColor(raider.class) }} className="font-medium">{raider.name}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1204,7 +1476,7 @@ Icons.Edit = () => (
 // HISTORY TAB
 // ============================================================================
 
-const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid }) => {
+const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid, onDeleteRaid }) => {
   const [expanded, setExpanded] = useState(null);
   const [editingRaid, setEditingRaid] = useState(null);
   const [showChangelog, setShowChangelog] = useState(null);
@@ -1399,6 +1671,9 @@ const HistoryTab = ({ raidHistory, lootHistory, raiders, isAdmin, onEditRaid }) 
                               <Icons.History /> View Changelog ({raid.editHistory.length})
                             </button>
                           )}
+                          <button onClick={() => onDeleteRaid(raid.id)} className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg border border-red-500/30 text-sm">
+                            <Icons.Trash /> Delete Raid
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1576,7 +1851,7 @@ Icons.Edit = () => (
 // LOOT TAB
 // ============================================================================
 
-const LootTab = ({ lootHistory, raiders, isAdmin, onRecord }) => {
+const LootTab = ({ lootHistory, raiders, isAdmin, onRecord, onDelete }) => {
   const [showModal, setShowModal] = useState(false);
   const [filter, setFilter] = useState('all');
   
@@ -1685,6 +1960,7 @@ const LootTab = ({ lootHistory, raiders, isAdmin, onRecord }) => {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Type</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Cost</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Date</th>
+                  {isAdmin && <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/30">
@@ -1702,6 +1978,13 @@ const LootTab = ({ lootHistory, raiders, isAdmin, onRecord }) => {
                     <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-medium ${l.isBis ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-600/50 text-slate-400'}`}>{l.isBis ? 'BiS' : 'Non-BiS'}</span></td>
                     <td className="px-4 py-3 text-right text-red-400 font-semibold">-{l.dkpCost}</td>
                     <td className="px-4 py-3 text-right text-slate-500 text-sm">{fmtDate(l.timestamp)}</td>
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-center">
+                        <button onClick={() => onDelete(l.id)} className="p-1.5 text-red-400 hover:bg-red-500/20 rounded" title="Delete Loot Entry">
+                          <Icons.Trash />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1963,17 +2246,19 @@ const ResourcesTab = () => {
 // ADMIN TAB
 // ============================================================================
 
-const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, onBulkUpdateDKP, onSetDKP, onDecay, onComplete, onRecordLoot, canUndo, lastAction, onUndo, runRaidState, updateRunRaidState, resetRunRaidState }) => {
+const AdminTab = ({ raiders, raidHistory, scheduled, onAdd, onEdit, onRemove, onUpdateDKP, onBulkUpdateDKP, onSetDKP, onDecay, onComplete, onRecordLoot, canUndo, lastAction, onUndo, runRaidState, updateRunRaidState, resetRunRaidState }) => {
   const [subTab, setSubTab] = useState('raiders');
   const [newName, setNewName] = useState('');
   const [newClass, setNewClass] = useState('Warrior');
   const [newRank, setNewRank] = useState('Trial');
+  const [newRole, setNewRole] = useState('Melee');
   
   // Edit Raider State
   const [editingRaider, setEditingRaider] = useState(null);
   const [editName, setEditName] = useState('');
   const [editClass, setEditClass] = useState('');
   const [editRank, setEditRank] = useState('');
+  const [editRole, setEditRole] = useState('');
 
   // Run Raid State - now from props (persists across tab switches)
   const { selectedRaid, selectedRaiders, bossesKilled, progBosses, raiderBonuses, lootItems, dkpAwarded, warcraftLogsUrl } = runRaidState;
@@ -2032,11 +2317,12 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
     setEditName(raider.name);
     setEditClass(raider.class);
     setEditRank(raider.rank);
+    setEditRole(raider.role || 'Melee');
   };
   
   const saveEditRaider = () => {
     if (!editName.trim()) return;
-    onEdit(editingRaider, { name: editName.trim(), class: editClass, rank: editRank });
+    onEdit(editingRaider, { name: editName.trim(), class: editClass, rank: editRank, role: editRole });
     setEditingRaider(null);
   };
   
@@ -2047,7 +2333,7 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
   const handleAddRaider = (e) => {
     if (e) e.preventDefault();
     if (!newName.trim()) return;
-    onAdd(newName.trim(), newClass, newRank);
+    onAdd(newName.trim(), newClass, newRank, newRole);
     setNewName('');
   };
 
@@ -2235,6 +2521,9 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
               <select value={newClass} onChange={e => setNewClass(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
                 {WOW_CLASSES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
+              <select value={newRole} onChange={e => setNewRole(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
+                {RAIDER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+              </select>
               <select value={newRank} onChange={e => setNewRank(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50">
                 <option value="Trial">Trial</option><option value="Raider">Raider</option><option value="Officer">Officer</option>
               </select>
@@ -2264,6 +2553,13 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
                           {WOW_CLASSES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                         </select>
                         <select 
+                          value={editRole} 
+                          onChange={e => setEditRole(e.target.value)} 
+                          className="px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        >
+                          {RAIDER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                        </select>
+                        <select 
                           value={editRank} 
                           onChange={e => setEditRank(e.target.value)} 
                           className="px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50"
@@ -2282,6 +2578,12 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
                         <div className="flex items-center gap-4">
                           <span className="font-semibold text-slate-100">{r.name}</span>
                           <span className="px-2 py-0.5 rounded text-sm" style={{ color: getClassColor(r.class), backgroundColor: `${getClassColor(r.class)}20` }}>{r.class}</span>
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            r.role === 'Tank' ? 'bg-blue-500/20 text-blue-400' :
+                            r.role === 'Healer' ? 'bg-green-500/20 text-green-400' :
+                            r.role === 'Melee' ? 'bg-red-500/20 text-red-400' :
+                            r.role === 'Ranged' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-500/20 text-slate-400'
+                          }`}>{r.role || 'N/A'}</span>
                           <span className={`px-2 py-0.5 rounded text-xs ${r.rank === 'Trial' ? 'bg-yellow-500/20 text-yellow-400' : r.rank === 'Officer' ? 'bg-purple-500/20 text-purple-400' : 'bg-green-500/20 text-green-400'}`}>{r.rank}</span>
                         </div>
                         <div className="flex items-center gap-4">
@@ -2302,6 +2604,66 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
       {/* RUN RAID */}
       {subTab === 'runraid' && (
         <div className="space-y-6">
+          {/* Upcoming Scheduled Raids */}
+          {(() => {
+            const now = new Date();
+            const upcomingRaids = scheduled.filter(r => new Date(r.dateTime) > now).sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+            
+            if (upcomingRaids.length === 0) return null;
+            
+            const loadScheduledRaid = (raid) => {
+              setSelectedRaid(raid.raidType);
+              setBossesKilled([]);
+              setProgBosses([]);
+              
+              // Load roster from scheduled raid
+              if (raid.rosterGroups) {
+                // New group format - load all groups in order
+                const allRaiders = [];
+                const groupCount = getRaidGroupCount(raid.raidType);
+                for (let i = 1; i <= groupCount; i++) {
+                  const groupRaiders = raid.rosterGroups[`group${i}`] || [];
+                  allRaiders.push(...groupRaiders);
+                }
+                setSelectedRaiders(allRaiders);
+              } else if (raid.roster && raid.roster.length > 0) {
+                // Old flat roster format
+                setSelectedRaiders(raid.roster);
+              }
+              
+              // Reset bonuses for loaded raiders
+              setRaiderBonuses({});
+            };
+            
+            return (
+              <div className="bg-slate-800/50 border border-amber-500/30 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-amber-400 mb-4">Load from Scheduled Raid</h3>
+                <div className="grid gap-3">
+                  {upcomingRaids.slice(0, 5).map(raid => (
+                    <button
+                      key={raid.id}
+                      onClick={() => loadScheduledRaid(raid)}
+                      className="flex items-center justify-between p-4 bg-slate-900/50 hover:bg-slate-800/50 border border-slate-700/50 hover:border-amber-500/50 rounded-lg transition-all text-left"
+                    >
+                      <div>
+                        <span className="font-semibold text-slate-100">{TBC_RAIDS[raid.raidType]?.name}</span>
+                        <span className="text-slate-400 text-sm ml-3">{fmtServerDateTime(raid.dateTime)}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {raid.roster?.length > 0 && (
+                          <span className="text-xs px-2 py-1 bg-slate-700 rounded text-slate-300">
+                            {raid.roster.length} raiders
+                          </span>
+                        )}
+                        <span className="text-amber-400 text-sm">Load →</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
             <h3 className="text-lg font-semibold text-amber-400 mb-4">Select Raid</h3>
             <select value={selectedRaid} onChange={e => { setSelectedRaid(e.target.value); setBossesKilled([]); setProgBosses([]); }} className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/50 mb-4">
@@ -2603,7 +2965,7 @@ const AdminTab = ({ raiders, raidHistory, onAdd, onEdit, onRemove, onUpdateDKP, 
 export default function DKPTracker() {
   
 // UI state
-const [tab, setTab] = useState('standings');
+const [tab, setTab] = useState('roster');
 
 // Admin login (Supabase Auth)
 const [isAdmin, setIsAdmin] = useState(false);
@@ -2661,7 +3023,9 @@ const resetRunRaidState = () => {
     bulkUpdateRaiders: dbBulkUpdateRaiders,
     addRaid: dbAddRaid,
     updateRaid: dbUpdateRaid,
+    deleteRaid: dbDeleteRaid,
     addLoot: dbAddLoot,
+    deleteLoot: dbDeleteLoot,
     addScheduledRaid: dbAddScheduledRaid,
     updateScheduledRaid: dbUpdateScheduledRaid,
     deleteScheduledRaid: dbDeleteScheduledRaid,
@@ -2762,12 +3126,13 @@ const resetRunRaidState = () => {
   // RAIDER OPERATIONS (with undo support)
   // ============================================================================
   
-  const addRaider = (name, cls, rank) => {
+  const addRaider = (name, cls, rank, role = 'Melee') => {
     const newRaider = { 
       id: genId(), 
       name, 
       class: cls, 
-      rank, 
+      rank,
+      role, 
       dkp: 0, 
       raidCount: 0, 
       createdAt: new Date().toISOString() 
@@ -2969,6 +3334,13 @@ const resetRunRaidState = () => {
     }
   };
 
+  const deleteLootEntry = (lootId) => {
+    if (!confirm('Are you sure you want to delete this loot entry? This will NOT refund the DKP.')) {
+      return;
+    }
+    dbDeleteLoot(lootId);
+  };
+
   const editRaid = (raidId, updates, editEntry) => {
     // Get the original raid to calculate DKP differences
     const originalRaid = raidHistory.find(r => r.id === raidId);
@@ -3016,6 +3388,13 @@ const resetRunRaidState = () => {
     });
   };
 
+  const deleteRaidFromHistory = (raidId) => {
+    if (!confirm('Are you sure you want to delete this raid? This action cannot be undone and will NOT reverse any DKP changes made by this raid.')) {
+      return;
+    }
+    dbDeleteRaid(raidId);
+  };
+
   const nextRaid = useMemo(() => {
     const now = new Date();
     const upcoming = scheduled.filter(r => new Date(r.dateTime) > now).sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
@@ -3023,7 +3402,7 @@ const resetRunRaidState = () => {
   }, [scheduled]);
 
   const tabs = [
-    { id: 'standings', label: 'DKP Standings', icon: <Icons.Users /> },
+    { id: 'roster', label: 'Roster', icon: <Icons.Users /> },
     { id: 'raids', label: 'Raid Schedule', icon: <Icons.Calendar /> },
     { id: 'history', label: 'Raid History', icon: <Icons.History /> },
     { id: 'loot', label: 'Loot Log', icon: <Icons.Sword /> },
@@ -3119,15 +3498,16 @@ const resetRunRaidState = () => {
       </nav>
 
       <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {tab === 'standings' && <StandingsTab raiders={raiders} isAdmin={isAdmin} onUpdateDKP={updateDKP} onRemove={removeRaider} onPromote={promoteRaider} />}
+        {tab === 'roster' && <RosterTab raiders={raiders} isAdmin={isAdmin} onUpdateDKP={updateDKP} onRemove={removeRaider} onPromote={promoteRaider} />}
         {tab === 'raids' && <RaidsTab scheduled={scheduled} raiders={raiders} isAdmin={isAdmin} onSchedule={scheduleRaid} onRemove={removeScheduled} onUpdateScheduled={updateScheduledRaid} />}
-        {tab === 'history' && <HistoryTab raidHistory={raidHistory} lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onEditRaid={editRaid} />}
-        {tab === 'loot' && <LootTab lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onRecord={recordLoot} />}
+        {tab === 'history' && <HistoryTab raidHistory={raidHistory} lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onEditRaid={editRaid} onDeleteRaid={deleteRaidFromHistory} />}
+        {tab === 'loot' && <LootTab lootHistory={lootHistory} raiders={raiders} isAdmin={isAdmin} onRecord={recordLoot} onDelete={deleteLootEntry} />}
         {tab === 'resources' && <ResourcesTab />}
         {tab === 'admin' && isAdmin && (
   <AdminTab
     raiders={raiders}
     raidHistory={raidHistory}
+    scheduled={scheduled}
     onAdd={addRaider}
     onEdit={editRaider}
     onRemove={removeRaider}
@@ -3152,6 +3532,7 @@ const resetRunRaidState = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between text-sm text-slate-500">
             <span>Sunken - Nightslayer US</span>
+            <span className="text-slate-600">v{APP_VERSION}</span>
             <span>DKP decays 50% every 4 raids</span>
           </div>
         </div>

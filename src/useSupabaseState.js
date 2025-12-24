@@ -151,6 +151,7 @@ export function useSupabaseState() {
       name: r.name,
       class: r.class,
       rank: r.rank,
+      role: r.role || 'Melee',
       dkp: r.dkp,
       raidCount: r.raid_count,
       createdAt: r.created_at,
@@ -163,6 +164,7 @@ export function useSupabaseState() {
       name: r.name,
       class: r.class,
       rank: r.rank,
+      role: r.role || 'Melee',
       dkp: r.dkp,
       raid_count: r.raidCount ?? 0,
       created_at: r.createdAt ?? new Date().toISOString(),
@@ -231,6 +233,7 @@ export function useSupabaseState() {
       dateTime: s.date_time,
       notes: s.note || '',
       roster: s.roster || [],
+      rosterGroups: s.roster_groups || null,
       createdAt: s.created_at,
     };
   }
@@ -242,6 +245,7 @@ export function useSupabaseState() {
       date_time: s.dateTime,
       note: s.notes || null,
       roster: s.roster || [],
+      roster_groups: s.rosterGroups || null,
       created_at: s.createdAt ?? new Date().toISOString(),
     };
   }
@@ -276,6 +280,7 @@ export function useSupabaseState() {
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.class !== undefined) dbUpdates.class = updates.class;
     if (updates.rank !== undefined) dbUpdates.rank = updates.rank;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
     if (updates.dkp !== undefined) dbUpdates.dkp = updates.dkp;
     if (updates.raidCount !== undefined) dbUpdates.raid_count = updates.raidCount;
 
@@ -385,6 +390,22 @@ export function useSupabaseState() {
     if (error) setError(error.message);
   }, []);
 
+  const deleteRaid = useCallback(async (id) => {
+    setError(null);
+    
+    const toDelete = raidHistory.find(r => r.id === id);
+    setRaidHistory(prev => prev.filter(r => r.id !== id));
+    
+    saving.current = true;
+    const { error } = await supabase.from("raid_history").delete().eq("id", id);
+    saving.current = false;
+    
+    if (error) {
+      setError(error.message);
+      if (toDelete) setRaidHistory(prev => [...prev, toDelete]);
+    }
+  }, [raidHistory]);
+
   // ============================================================================
   // LOOT HISTORY OPERATIONS
   // ============================================================================
@@ -405,6 +426,22 @@ export function useSupabaseState() {
       setLootHistory(prev => prev.filter(l => l.id !== loot.id));
     }
   }, []);
+
+  const deleteLoot = useCallback(async (id) => {
+    setError(null);
+    
+    const toDelete = lootHistory.find(l => l.id === id);
+    setLootHistory(prev => prev.filter(l => l.id !== id));
+    
+    saving.current = true;
+    const { error } = await supabase.from("loot_history").delete().eq("id", id);
+    saving.current = false;
+    
+    if (error) {
+      setError(error.message);
+      if (toDelete) setLootHistory(prev => [...prev, toDelete]);
+    }
+  }, [lootHistory]);
 
   // ============================================================================
   // SCHEDULED RAIDS OPERATIONS
@@ -434,6 +471,7 @@ export function useSupabaseState() {
     if (updates.dateTime !== undefined) dbUpdates.date_time = updates.dateTime;
     if (updates.notes !== undefined) dbUpdates.note = updates.notes;
     if (updates.roster !== undefined) dbUpdates.roster = updates.roster;
+    if (updates.rosterGroups !== undefined) dbUpdates.roster_groups = updates.rosterGroups;
 
     setScheduled(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
     
@@ -482,9 +520,11 @@ export function useSupabaseState() {
     // Raid history operations
     addRaid,
     updateRaid,
+    deleteRaid,
     
     // Loot operations
     addLoot,
+    deleteLoot,
     
     // Scheduled raids operations
     addScheduledRaid,
