@@ -2970,6 +2970,7 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {activityLog.map(activity => {
                   const getActionColor = (type) => {
+                    if (type.includes('UNDO')) return 'text-orange-400 bg-orange-500/10 border-orange-500/30';
                     if (type.includes('ADDED') || type.includes('COMPLETED') || type.includes('SCHEDULED')) return 'text-green-400 bg-green-500/10 border-green-500/30';
                     if (type.includes('DELETED') || type.includes('REMOVED')) return 'text-red-400 bg-red-500/10 border-red-500/30';
                     if (type.includes('EDITED') || type.includes('UPDATED') || type.includes('ADJUSTED')) return 'text-blue-400 bg-blue-500/10 border-blue-500/30';
@@ -2979,6 +2980,7 @@ const AdminTab = ({ raiders, raidHistory, scheduled, activityLog, onAdd, onEdit,
                   };
                   
                   const getActionIcon = (type) => {
+                    if (type.includes('UNDO')) return '↩️';
                     if (type.includes('RAIDER')) return '👤';
                     if (type.includes('LOOT')) return '⚔️';
                     if (type.includes('RAID')) return '🏰';
@@ -3170,6 +3172,11 @@ const resetRunRaidState = () => {
         default:
           console.warn('Unknown undo action type:', action.type);
       }
+      
+      addActivity('UNDO_ACTION', `Undone: ${action.description}`, {
+        actionType: action.type,
+        originalDescription: action.description
+      });
       
       alert(`Undone: ${action.description}`);
     } catch (err) {
